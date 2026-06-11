@@ -79,7 +79,6 @@ function bindEvents() {
   document.getElementById('btnAdd').addEventListener('click', onAddItem);
   document.getElementById('bagToggle').addEventListener('change', onBagToggle);
   document.getElementById('bagMaxWeight').addEventListener('input', renderBags);
-  document.getElementById('btnCopy').addEventListener('click', copySummary);
 }
 
 // ─────────────────────────────────────────────
@@ -617,51 +616,49 @@ function renderSummary() {
 }
 
 // ─────────────────────────────────────────────
-//  Copy
-// ─────────────────────────────────────────────
-function copySummary() {
-  navigator.clipboard.writeText(window.latestSubmissionText).then(() => {
-    const btn = document.getElementById('btnCopy');
-    btn.textContent = '✅ Copied!';
-    setTimeout(() => { btn.textContent = '📋 Copy Summary'; }, 2000);
-  }).catch(() => {
-    const ta = document.createElement('textarea');
-    ta.value = window.latestSubmissionText;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-  });
-}
-
-// ─────────────────────────────────────────────
 //  JotForm
 // ─────────────────────────────────────────────
 function setupJotform() {
-  if (typeof JFCustomWidget === 'undefined') return;
-  JFCustomWidget.subscribe('submit', function () {
-    JFCustomWidget.sendSubmit({ valid: true, value: window.latestSubmissionText });
-  });
-  JFCustomWidget.subscribe('ready', function () {
-    broadcastToJotform();
-  });
+  if (typeof JFCustomWidget !== 'undefined') {
+    JFCustomWidget.subscribe('submit', function () {
+      JFCustomWidget.sendSubmit({ valid: true, value: window.latestSubmissionText });
+    });
+    JFCustomWidget.subscribe('ready', function () {
+      broadcastToJotform();
+    });
+  }
 }
 
 function broadcastToJotform() {
   const value = window.latestSubmissionText;
 
-  // Method 1: JFCustomWidget API (primary)
+  // Method 1: JFCustomWidget API
   if (typeof JFCustomWidget !== 'undefined') {
     try { JFCustomWidget.sendData({ value }); } catch (e) {}
   }
 
-  // Method 2: postMessage to parent iframe (real-time fallback)
+  // Method 2: Directly write into #input_82 in the parent JotForm page
+  try {
+    if (window.parent && window.parent !== window) {
+      const parentDoc = window.parent.document;
+      const target = parentDoc.getElementById('input_82');
+      if (target) {
+        target.value = value;
+        // Fire change + input events so JotForm registers the update
+        target.dispatchEvent(new Event('input',  { bubbles: true }));
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+  } catch (e) {}
+
+  // Method 3: postMessage fallback
   try {
     if (window.parent && window.parent !== window) {
       window.parent.postMessage(JSON.stringify({
-        type: 'widgetValue',
+        type:    'widgetValue',
+        fieldId: 'input_82',
         value,
-        valid: true
+        valid:   true
       }), '*');
     }
   } catch (e) {}
