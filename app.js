@@ -472,7 +472,7 @@ function renderTotals() {
 }
 
 // ─────────────────────────────────────────────
-//  Bag Grouping
+//  Bag Grouping — splits quantity items across bags
 // ─────────────────────────────────────────────
 function onBagToggle() {
   const on = document.getElementById('bagToggle').checked;
@@ -489,9 +489,11 @@ function renderBags() {
   const maxW = parseFloat(document.getElementById('bagMaxWeight').value) || 15;
   const bags = groupIntoBags(laundryItems, maxW);
 
+  if (bags.length === 0) { container.innerHTML = ''; return; }
+
   let html = '<div class="bags-grid">';
   bags.forEach((bag, idx) => {
-    const bagW = bag.reduce((s, i) => s + i.totalWeight, 0);
+    const bagW = bag.reduce((s, i) => s + i.sliceWeight, 0);
     html += `
       <div class="bag-card">
         <div class="bag-header">
@@ -499,9 +501,9 @@ function renderBags() {
           <span class="bag-weight">${bagW.toFixed(3)} kg</span>
         </div>
         <div class="bag-items">
-          ${bag.map(it => {
-            const qtyStr = (it.mode === 'quantity' && it.quantity > 1) ? ` ×${it.quantity}` : '';
-            return `<div>• ${escHtml(it.displayName)}${qtyStr} <span style="color:#888">(${it.totalWeight.toFixed(3)} kg)</span></div>`;
+          ${bag.map(slice => {
+            const qtyStr = slice.sliceQty > 1 ? ` ×${slice.sliceQty}` : '';
+            return `<div>• ${escHtml(slice.displayName)}${qtyStr} <span style="color:#888">(${slice.sliceWeight.toFixed(3)} kg)</span></div>`;
           }).join('')}
         </div>
       </div>`;
@@ -510,18 +512,60 @@ function renderBags() {
   container.innerHTML = html;
 }
 
+/**
+ * Groups items into bags strictly under maxW.
+ * Quantity items (mode==='quantity') are split unit-by-unit so no bag exceeds maxW.
+ * Returns array of bags; each bag is array of slices: { displayName, sliceQty, sliceWeight }
+ */
 function groupIntoBags(items, maxW) {
-  const sorted = [...items].sort((a, b) => b.totalWeight - a.totalWeight);
-  const bags   = [];
-  sorted.forEach(item => {
-    let placed = false;
-    for (const bag of bags) {
-      const used = bag.reduce((s, i) => s + i.totalWeight, 0);
-      if (used + item.totalWeight <= maxW + 0.0001) { bag.push(item); placed = true; break; }
+  // Expand every item into individual units
+  const units = [];
+  items.forEach(it => {
+    const unitW = it.weightPerItem;
+    if (unitW > maxW) {
+      // Single unit exceeds max — goes in its own bag, can't be split further
+      units.push({ displayName: it.displayName, unitWeight: unitW, _over: true });
+    } else {
+      const count = it.mode === 'quantity' ? it.quantity : 1;
+      for (let i = 0; i < count; i++) {
+        units.push({ displayName: it.displayName, unitWeight: unitW });
+      }
     }
-    if (!placed) bags.push([item]);
   });
-  return bags;
+
+  // Sort heaviest first (first-fit decreasing)
+  units.sort((a, b) => b.unitWeight - a.unitWeight);
+
+  // Pack into bags
+  const bagWeights = []; // running weight per bag
+  const bagSlices  = []; // array of maps: displayName -> { displayName, sliceQty, sliceWeight }
+
+  units.forEach(unit => {
+    let placed = false;
+    for (let b = 0; b < bagWeights.length; b++) {
+      if (bagWeights[b] + unit.unitWeight <= maxW + 0.0001) {
+        bagWeights[b] += unit.unitWeight;
+        const map = bagSlices[b];
+        if (map[unit.displayName]) {
+          map[unit.displayName].sliceQty   += 1;
+          map[unit.displayName].sliceWeight = parseFloat((map[unit.displayName].sliceWeight + unit.unitWeight).toFixed(6));
+        } else {
+          map[unit.displayName] = { displayName: unit.displayName, sliceQty: 1, sliceWeight: unit.unitWeight };
+        }
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) {
+      bagWeights.push(unit.unitWeight);
+      const map = {};
+      map[unit.displayName] = { displayName: unit.displayName, sliceQty: 1, sliceWeight: unit.unitWeight };
+      bagSlices.push(map);
+    }
+  });
+
+  // Convert maps to arrays
+  return bagSlices.map(map => Object.values(map));
 }
 
 // ─────────────────────────────────────────────
@@ -531,15 +575,32 @@ function buildSummaryText() {
   if (laundryItems.length === 0) return '— No items —';
   const totalW = laundryItems.reduce((s, i) => s + i.totalWeight, 0);
   let lines = [];
-  laundryItems.forEach(it => {
-    lines.push(`ITEM NAME: ${it.displayName}`);
-    if (it.mode === 'quantity' && it.quantity > 1) {
-      lines.push(`QUANTITY: ${it.quantity}`);
-      lines.push(`WEIGHT PER ITEM: ${it.weightPerItem.toFixed(3)}kg`);
-    }
-    lines.push(`WEIGHT: ${it.totalWeight.toFixed(3)}kg`);
-    lines.push('');
-  });
+
+  const bagOn = document.getElementById('bagToggle').checked;
+  if (bagOn) {
+    const maxW = parseFloat(document.getElementById('bagMaxWeight').value) || 15;
+    const bags = groupIntoBags(laundryItems, maxW);
+    bags.forEach((bag, idx) => {
+      const bagW = bag.reduce((s, sl) => s + sl.sliceWeight, 0);
+      lines.push(`--- BAG ${idx + 1} (${bagW.toFixed(3)}kg) ---`);
+      bag.forEach(sl => {
+        lines.push(`ITEM NAME: ${sl.displayName}${sl.sliceQty > 1 ? ` ×${sl.sliceQty}` : ''}`);
+        lines.push(`WEIGHT: ${sl.sliceWeight.toFixed(3)}kg`);
+        lines.push('');
+      });
+    });
+  } else {
+    laundryItems.forEach(it => {
+      lines.push(`ITEM NAME: ${it.displayName}`);
+      if (it.mode === 'quantity' && it.quantity > 1) {
+        lines.push(`QUANTITY: ${it.quantity}`);
+        lines.push(`WEIGHT PER ITEM: ${it.weightPerItem.toFixed(3)}kg`);
+      }
+      lines.push(`WEIGHT: ${it.totalWeight.toFixed(3)}kg`);
+      lines.push('');
+    });
+  }
+
   lines.push(`TOTAL ITEMS: ${laundryItems.length}`);
   lines.push(`TOTAL WEIGHT: ${totalW.toFixed(3)}kg`);
   return lines.join('\n');
@@ -549,6 +610,10 @@ function renderSummary() {
   const text = buildSummaryText();
   window.latestSubmissionText = text;
   document.getElementById('summaryOutput').textContent = text;
+  // Also update the grand total box
+  const totalW = laundryItems.reduce((s, i) => s + i.totalWeight, 0);
+  const gtEl = document.getElementById('grandTotalWeight');
+  if (gtEl) gtEl.textContent = totalW.toFixed(3) + ' kg';
 }
 
 // ─────────────────────────────────────────────
@@ -577,11 +642,29 @@ function setupJotform() {
   JFCustomWidget.subscribe('submit', function () {
     JFCustomWidget.sendSubmit({ valid: true, value: window.latestSubmissionText });
   });
+  JFCustomWidget.subscribe('ready', function () {
+    broadcastToJotform();
+  });
 }
 
 function broadcastToJotform() {
-  if (typeof JFCustomWidget === 'undefined') return;
-  try { JFCustomWidget.sendData({ value: window.latestSubmissionText }); } catch (e) {}
+  const value = window.latestSubmissionText;
+
+  // Method 1: JFCustomWidget API (primary)
+  if (typeof JFCustomWidget !== 'undefined') {
+    try { JFCustomWidget.sendData({ value }); } catch (e) {}
+  }
+
+  // Method 2: postMessage to parent iframe (real-time fallback)
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage(JSON.stringify({
+        type: 'widgetValue',
+        value,
+        valid: true
+      }), '*');
+    }
+  } catch (e) {}
 }
 
 // ─────────────────────────────────────────────
