@@ -17,7 +17,7 @@
     <p>Select items from inventory — no manual typing needed</p>
   </div>
 
-  <!-- ── Item Selector Card ── -->
+  <!-- ── Item Selector ── -->
   <div class="card">
     <div class="card-title">➕ Add Item to Laundry List</div>
     <div id="alertBox"></div>
@@ -33,12 +33,12 @@
       </div>
     </div>
 
-    <div class="form-group" id="componentGroup" style="display:none; margin-bottom:12px;">
+    <div class="form-group" id="componentGroup" style="display:none; margin-bottom:10px;">
       <label for="componentSelect">Component</label>
       <select id="componentSelect"><option value="">— Select component —</option></select>
     </div>
 
-    <div class="form-group" style="margin-bottom:12px;">
+    <div class="form-group" style="margin-bottom:10px;">
       <label for="weightInput" id="weightLabel">Weight</label>
       <div id="weightDisplay" class="weight-display empty">
         <span class="weight-val">—</span><span class="weight-unit">kg</span>
@@ -46,40 +46,41 @@
       <input type="number" id="weightInput" style="display:none;" min="0" step="0.01" placeholder="Enter kg" />
     </div>
 
-    <div class="form-group" id="quantityRow" style="display:none; margin-bottom:12px;">
-      <label for="qtySelect">Quantity</label>
-      <select id="qtySelect">
-        <option value="1">1</option><option value="2">2</option><option value="3">3</option>
-        <option value="4">4</option><option value="5">5</option><option value="6">6</option>
-        <option value="7">7</option><option value="8">8</option><option value="9">9</option>
-        <option value="10">10</option><option value="11">11</option><option value="12">12</option>
-        <option value="13">13</option><option value="14">14</option><option value="15">15</option>
-        <option value="16">16</option><option value="17">17</option><option value="18">18</option>
-        <option value="19">19</option><option value="20">20</option>
-      </select>
-    </div>
-
-    <div class="form-group" id="totalWeightRow" style="display:none; margin-bottom:12px;">
-      <label>Total Weight</label>
-      <div class="weight-display total-weight-display">
-        <span id="totalWeightDisplay">—</span>
+    <div class="form-row cols-2" id="qtyTotalRow" style="display:none;">
+      <div class="form-group" id="quantityRow">
+        <label for="qtySelect">Quantity</label>
+        <select id="qtySelect">
+          <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+          <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+          <option value="7">7</option><option value="8">8</option><option value="9">9</option>
+          <option value="10">10</option><option value="11">11</option><option value="12">12</option>
+          <option value="13">13</option><option value="14">14</option><option value="15">15</option>
+          <option value="16">16</option><option value="17">17</option><option value="18">18</option>
+          <option value="19">19</option><option value="20">20</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Total Weight</label>
+        <div class="weight-display total-weight-display">
+          <span id="totalWeightDisplay">—</span>
+        </div>
       </div>
     </div>
 
     <button class="btn btn-primary btn-add" id="btnAdd" disabled>Add to Laundry List</button>
   </div>
 
-  <!-- ── Laundry List Card ── -->
+  <!-- ── Laundry List ── -->
   <div class="card">
     <div class="card-title">📋 Laundry List</div>
     <div id="listEmpty" class="empty-state">
       <div class="empty-icon">🧺</div>
-      <p>No items added yet.<br>Use the form above to add items.</p>
+      <p>No items added yet.</p>
     </div>
     <ul class="laundry-list" id="laundryList"></ul>
   </div>
 
-  <!-- ── Totals Card ── -->
+  <!-- ── Totals ── -->
   <div class="card">
     <div class="card-title">📊 Totals</div>
     <div class="totals-row">
@@ -94,33 +95,42 @@
     </div>
   </div>
 
-  <!-- ── Bag Grouping Card ── -->
+  <!-- ── Bag Grouping ── -->
   <div class="card">
     <div class="card-title">🛄 Bag Grouping</div>
 
-    <div id="bagEmpty" class="empty-state" style="padding:16px 0 8px;">
-      <p style="font-size:13px;">Add items to the laundry list first, then group them into bags.</p>
+    <div id="bagEmpty" class="empty-state" style="padding:12px 0 4px;">
+      <p style="font-size:12px;">Add items to the laundry list first.</p>
     </div>
 
-    <div id="bagSetup" style="display:none; margin-bottom:16px;">
-      <div class="form-group">
-        <label for="numBagsInput">How many bags?</label>
-        <div style="display:flex; gap:10px; align-items:center; margin-top:6px;">
-          <input type="number" id="numBagsInput" min="1" max="20" value="1"
-            style="width:80px; padding:9px 12px; border:1.5px solid var(--border); border-radius:8px;
-                   font-size:16px; font-weight:700; color:var(--brand); text-align:center;
-                   font-family:inherit; outline:none;" />
-          <button class="btn btn-primary" onclick="onSetBags()">Set Bags</button>
+    <div id="bagSetup" style="display:none;">
+      <div class="bag-section-header">
+        <div class="bag-count-row">
+          <label for="numBagsInput" style="font-size:13px;color:var(--text);font-weight:600;">Number of bags:</label>
+          <input type="number" id="numBagsInput" min="1" max="20" value="1" />
+          <button class="btn btn-primary" onclick="onSetBags()" style="padding:7px 14px;font-size:13px;">Set Bags</button>
         </div>
       </div>
-    </div>
 
-    <div id="bagsOutput"></div>
+      <!-- Pool + Bag columns -->
+      <div class="bag-workspace" id="bagWorkspace" style="display:none;">
+
+        <!-- Left: Unassigned pool -->
+        <div class="bag-pool">
+          <div class="bag-pool-header">📦 Unassigned Items</div>
+          <div class="bag-pool-list" id="poolList"></div>
+        </div>
+
+        <!-- Right: Bag columns -->
+        <div class="bags-columns" id="bagsColumns"></div>
+
+      </div>
+    </div>
   </div>
 
-  <!-- ── Grand Total Weight ── -->
+  <!-- ── Grand Total ── -->
   <div class="card grand-total-card">
-    <div class="grand-total-label">🏋️ GRAND TOTAL WEIGHT</div>
+    <div class="grand-total-label">🏋️ Grand Total Weight</div>
     <div class="grand-total-value" id="grandTotalWeight">0.000 kg</div>
   </div>
 
