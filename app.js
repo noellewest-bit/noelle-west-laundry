@@ -480,46 +480,40 @@ function renderTotals() {
 // bags[i] = { entries: [ { key, qty } ] }
 let bags = [];
 
-// Called directly from HTML onclick — guaranteed to work
-window.onClickAddBag = function() {
-  if (laundryItems.length === 0) return;
-  bags.push({ entries: [] });
+function initBagSection() { /* no-op — all wired via inline onclick in HTML */ }
+
+// Called from HTML: onSetBags()
+window.onSetBags = function() {
+  const n = parseInt(document.getElementById('numBagsInput').value) || 1;
+  const clamped = Math.max(1, Math.min(20, n));
+
+  // Keep existing bag data if shrinking; add empties if growing
+  while (bags.length < clamped) bags.push({ entries: [] });
+  while (bags.length > clamped) bags.pop();
+
+  // Clean stale entries
+  bags.forEach(bag => {
+    bag.entries = bag.entries.filter(e => laundryItems.some(i => i.key === e.key));
+  });
+
   renderAllBags();
   renderSummary();
   broadcastToJotform();
 };
 
-function initBagSection() {
-  // nothing needed — button uses inline onclick
-}
-
-/** Called after laundryItems changes */
 function refreshBagUI() {
   const hasList = laundryItems.length > 0;
   document.getElementById('bagEmpty').style.display  = hasList ? 'none' : '';
-  document.getElementById('btnAddBag').style.display = hasList ? '' : 'none';
+  document.getElementById('bagSetup').style.display  = hasList ? '' : 'none';
 
-  // Remove entries whose keys no longer exist in laundryItems
+  // Clean stale entries when items are removed from laundry list
   bags.forEach(bag => {
     bag.entries = bag.entries.filter(e => laundryItems.some(i => i.key === e.key));
   });
 
-  // Auto-create Bag 1 only if there are no bags yet
-  if (hasList && bags.length === 0) {
-    bags.push({ entries: [] });
-  }
-
   renderAllBags();
 }
 
-function removeBag(idx) {
-  bags.splice(idx, 1);
-  renderAllBags();
-  renderSummary();
-  broadcastToJotform();
-}
-
-// ── Full re-render of the bags grid ──
 function renderAllBags() {
   const container = document.getElementById('bagsOutput');
   container.innerHTML = '';
@@ -535,50 +529,62 @@ function renderOneBag(grid, bag, idx) {
   const bagW = getBagWeight(idx);
   const card = document.createElement('div');
   card.className = 'bag-card';
-  card.id = `bagCard_${idx}`;
 
   // ── Header ──
   const header = document.createElement('div');
   header.className = 'bag-header';
-  header.innerHTML = `
-    <h3>Bag ${idx + 1}</h3>
-    <span class="bag-weight">${bagW.toFixed(3)} kg</span>`;
-  const delBtn = document.createElement('button');
-  delBtn.className = 'bag-delete-btn';
-  delBtn.textContent = '🗑';
-  delBtn.onclick = () => removeBag(idx);
-  header.appendChild(delBtn);
+  const h3 = document.createElement('h3');
+  h3.textContent = `Bag ${idx + 1}`;
+  const wSpan = document.createElement('span');
+  wSpan.className = 'bag-weight';
+  wSpan.textContent = `${bagW.toFixed(3)} kg`;
+  header.appendChild(h3);
+  header.appendChild(wSpan);
   card.appendChild(header);
 
   // ── Item picker ──
   const picker = document.createElement('div');
   picker.className = 'bag-item-picker';
-  picker.innerHTML = `<label class="picker-label">Add Item to Bag</label>`;
 
+  const pickerLabel = document.createElement('label');
+  pickerLabel.className = 'picker-label';
+  pickerLabel.textContent = 'Add Item to Bag';
+  picker.appendChild(pickerLabel);
+
+  // Item select — show all items not yet fully used in this bag
+  const usedKeysInBag = new Set(bag.entries.map(e => e.key));
   const sel = document.createElement('select');
-  sel.id = `bagSelect_${idx}`;
-  sel.innerHTML = '<option value="">— Select item —</option>';
+  sel.size = Math.min(6, laundryItems.length + 1); // scrollable listbox
 
-  // Available items = not yet added to this bag
-  const usedKeys = new Set(bag.entries.map(e => e.key));
+  const blankOpt = document.createElement('option');
+  blankOpt.value = '';
+  blankOpt.textContent = '— Select item —';
+  sel.appendChild(blankOpt);
+
   laundryItems.forEach(it => {
-    if (!usedKeys.has(it.key)) {
+    if (!usedKeysInBag.has(it.key)) {
       const opt = document.createElement('option');
       opt.value = it.key;
-      const qStr = it.mode === 'quantity' && it.quantity > 1 ? ` (max qty: ${it.quantity})` : ` — ${it.totalWeight.toFixed(3)} kg`;
+      const qStr = it.mode === 'quantity' && it.quantity > 1
+        ? ` (up to ×${it.quantity})`
+        : ` — ${it.totalWeight.toFixed(3)} kg`;
       opt.textContent = it.displayName + qStr;
       sel.appendChild(opt);
     }
   });
   picker.appendChild(sel);
 
-  // Qty selector — shown only after item is chosen, for quantity-mode items
+  // Qty row — only for quantity-mode items
   const qtyRow = document.createElement('div');
   qtyRow.className = 'bag-qty-row';
   qtyRow.style.display = 'none';
-  qtyRow.innerHTML = `
-    <label class="picker-label" style="margin-top:8px;">Quantity for this bag</label>
-    <select id="bagQty_${idx}"></select>`;
+  const qtyLabel = document.createElement('label');
+  qtyLabel.className = 'picker-label';
+  qtyLabel.style.marginTop = '8px';
+  qtyLabel.textContent = 'Quantity for this bag';
+  const qtySel = document.createElement('select');
+  qtyRow.appendChild(qtyLabel);
+  qtyRow.appendChild(qtySel);
   picker.appendChild(qtyRow);
 
   // Add to bag button
@@ -588,20 +594,19 @@ function renderOneBag(grid, bag, idx) {
   addBtn.textContent = 'Add to Bag';
   addBtn.disabled = true;
   picker.appendChild(addBtn);
+  card.appendChild(picker);
 
-  // Wire up item select → show qty if needed
+  // Wire item select
   sel.addEventListener('change', () => {
     const key = sel.value;
     if (!key) { addBtn.disabled = true; qtyRow.style.display = 'none'; return; }
     addBtn.disabled = false;
     const it = laundryItems.find(i => i.key === key);
     if (it && it.mode === 'quantity' && it.quantity > 1) {
-      const qtySel = qtyRow.querySelector('select');
       qtySel.innerHTML = '';
       for (let q = 1; q <= it.quantity; q++) {
         const o = document.createElement('option');
-        o.value = q;
-        o.textContent = q;
+        o.value = q; o.textContent = q;
         qtySel.appendChild(o);
       }
       qtyRow.style.display = '';
@@ -610,30 +615,30 @@ function renderOneBag(grid, bag, idx) {
     }
   });
 
-  // Wire up Add to Bag button
+  // Wire Add to Bag button
   addBtn.addEventListener('click', () => {
     const key = sel.value;
     if (!key) return;
     const it = laundryItems.find(i => i.key === key);
     if (!it) return;
-    let qty = 1;
-    if (it.mode === 'quantity' && it.quantity > 1) {
-      qty = parseInt(qtyRow.querySelector('select').value) || 1;
-    }
+    const qty = (it.mode === 'quantity' && it.quantity > 1)
+      ? (parseInt(qtySel.value) || 1)
+      : 1;
     bag.entries.push({ key, qty });
     renderAllBags();
     renderSummary();
     broadcastToJotform();
   });
 
-  card.appendChild(picker);
-
   // ── Entries list ──
   const itemsList = document.createElement('div');
   itemsList.className = 'bag-items';
 
   if (bag.entries.length === 0) {
-    itemsList.innerHTML = '<div class="bag-no-items">No items added yet.</div>';
+    const empty = document.createElement('div');
+    empty.className = 'bag-no-items';
+    empty.textContent = 'No items added yet.';
+    itemsList.appendChild(empty);
   } else {
     bag.entries.forEach((entry, eIdx) => {
       const it = laundryItems.find(i => i.key === entry.key);
@@ -641,22 +646,31 @@ function renderOneBag(grid, bag, idx) {
       const entryW = it.mode === 'quantity'
         ? it.weightPerItem * entry.qty
         : it.totalWeight;
-      const qStr = it.mode === 'quantity' && it.quantity > 1 ? ` ×${entry.qty}` : '';
+      const qStr = it.mode === 'quantity' && entry.qty > 1 ? ` ×${entry.qty}` : '';
 
       const row = document.createElement('div');
       row.className = 'bag-item-row';
-      row.innerHTML = `
-        <span class="bag-item-name">• ${escHtml(it.displayName)}${qStr}</span>
-        <span class="bag-item-wt">${entryW.toFixed(3)} kg</span>`;
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'bag-item-name';
+      nameSpan.textContent = `• ${it.displayName}${qStr}`;
+
+      const wtSpan = document.createElement('span');
+      wtSpan.className = 'bag-item-wt';
+      wtSpan.textContent = `${entryW.toFixed(3)} kg`;
+
       const rmBtn = document.createElement('button');
       rmBtn.className = 'bag-item-remove';
       rmBtn.textContent = '✕';
-      rmBtn.onclick = () => {
+      rmBtn.addEventListener('click', () => {
         bag.entries.splice(eIdx, 1);
         renderAllBags();
         renderSummary();
         broadcastToJotform();
-      };
+      });
+
+      row.appendChild(nameSpan);
+      row.appendChild(wtSpan);
       row.appendChild(rmBtn);
       itemsList.appendChild(row);
     });
