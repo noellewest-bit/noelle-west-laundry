@@ -14,10 +14,13 @@ function getCatMode(cat) {
 
 // ── State ──
 let INVENTORY    = {};
-let laundryItems = [];
+let laundryItems = [];   // { key, displayName, weightPerItem, quantity, totalWeight, isManual, category, mode }
 let usedKeys     = new Set();
 let tomItem      = null;
-let bags         = []; // [ { entries: [ { key, qty } ] } ]
+
+// bags[i] = { entries: [ { key, qty } ] }
+// key = laundryItem.key; qty = units assigned to this bag
+let bags = [];
 
 window.latestSubmissionText = '';
 
@@ -36,7 +39,7 @@ async function loadInventory() {
     const res = await fetch('master-items.json');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     INVENTORY = await res.json();
-  } catch (e) {
+  } catch(e) {
     showAlert('⚠️ Could not load inventory data.', 'error');
   }
 }
@@ -67,15 +70,15 @@ function onCategoryChange() {
   resetItemDropdown();
   hideComponent();
   resetWeightArea();
-  hideQuantityRow();
+  hideQtyRow();
   updateAddButton();
   if (!cat || !INVENTORY[cat]) return;
   const available = INVENTORY[cat].items.filter(it => !usedKeys.has(makeKey(cat, it.name)));
   buildItemDropdown(cat, available);
-  if (getCatMode(cat) === 'quantity') showQuantityRow();
+  if (getCatMode(cat) === 'quantity') showQtyRow();
 }
 
-// ── Item Dropdown ──
+// ── Item Dropdown (Tom Select) ──
 function resetItemDropdown() {
   if (tomItem) { tomItem.destroy(); tomItem = null; }
   document.getElementById('itemSelect').innerHTML = '<option value="">— Select category first —</option>';
@@ -126,7 +129,7 @@ function showComponentDropdown(componentNames, item) {
     const opt = document.createElement('option');
     opt.value = c;
     const w = item.components[c];
-    opt.textContent = c + (w !== null && w !== undefined ? ` (${w} kg)` : '');
+    opt.textContent = c + (w != null ? ` (${w} kg)` : '');
     sel.appendChild(opt);
   });
   grp.style.display = '';
@@ -139,43 +142,40 @@ function hideComponent() {
 }
 
 function onComponentChange() {
-  const cat      = document.getElementById('catSelect').value;
-  const itemName = tomItem ? tomItem.getValue() : '';
-  const comp     = document.getElementById('componentSelect').value;
+  const cat  = document.getElementById('catSelect').value;
+  const name = tomItem ? tomItem.getValue() : '';
+  const comp = document.getElementById('componentSelect').value;
   resetWeightArea();
-  if (!comp || !itemName || !INVENTORY[cat]) { updateAddButton(); return; }
-  const item = INVENTORY[cat].items.find(i => i.name === itemName);
+  if (!comp || !name || !INVENTORY[cat]) { updateAddButton(); return; }
+  const item = INVENTORY[cat].items.find(i => i.name === name);
   if (!item) return;
   const w = item.components[comp];
-  if (w !== null && w !== undefined) setWeightDisplay(w, getCatMode(cat));
-  else showManualWeightInput(getCatMode(cat));
+  if (w != null) setWeightDisplay(w, getCatMode(cat));
+  else           showManualWeightInput(getCatMode(cat));
   updateTotalWeightDisplay();
   updateAddButton();
 }
 
-// ── Weight Area ──
+// ── Weight ──
 function setWeightDisplay(val, mode) {
-  const disp  = document.getElementById('weightDisplay');
-  const inp   = document.getElementById('weightInput');
+  const disp = document.getElementById('weightDisplay');
+  const inp  = document.getElementById('weightInput');
   document.getElementById('weightLabel').textContent = mode === 'quantity' ? 'Weight Per Item' : 'Weight';
   disp.classList.remove('empty');
   disp.style.display = '';
   disp.innerHTML = `<span class="weight-val">${parseFloat(val).toFixed(3)}</span><span class="weight-unit">kg</span>`;
   disp.dataset.weight = val;
-  inp.style.display = 'none';
-  inp.value = '';
+  inp.style.display = 'none'; inp.value = '';
 }
 
 function showManualWeightInput(mode) {
   const disp = document.getElementById('weightDisplay');
   const inp  = document.getElementById('weightInput');
   document.getElementById('weightLabel').textContent = mode === 'quantity' ? 'Weight Per Item' : 'Weight';
-  disp.style.display = 'none';
-  delete disp.dataset.weight;
+  disp.style.display = 'none'; delete disp.dataset.weight;
   inp.style.display = '';
-  inp.value = '';
-  inp.placeholder = mode === 'quantity' ? 'Weight per item (kg)' : 'Enter kg (e.g. 0.30)';
-  inp.focus();
+  inp.placeholder = mode === 'quantity' ? 'Weight per item (kg)' : 'Enter kg';
+  inp.value = ''; inp.focus();
 }
 
 function resetWeightArea() {
@@ -186,8 +186,7 @@ function resetWeightArea() {
   disp.style.display = '';
   disp.innerHTML = '<span class="weight-val">—</span><span class="weight-unit">kg</span>';
   delete disp.dataset.weight;
-  inp.style.display = 'none';
-  inp.value = '';
+  inp.style.display = 'none'; inp.value = '';
   const tw = document.getElementById('totalWeightDisplay');
   if (tw) tw.textContent = '—';
 }
@@ -199,43 +198,29 @@ function getCurrentWeightPerItem() {
     const v = parseFloat(inp.value);
     return (!isNaN(v) && v > 0) ? v : null;
   }
-  if (disp.dataset.weight) return parseFloat(disp.dataset.weight);
-  return null;
+  return disp.dataset.weight ? parseFloat(disp.dataset.weight) : null;
 }
 
-// ── Quantity Row ──
-function showQuantityRow() {
-  document.getElementById('quantityRow').style.display   = '';
-  document.getElementById('totalWeightRow').style.display = '';
-  document.getElementById('qtySelect').value = '1';
-}
+// ── Qty Row ──
+function showQtyRow() { document.getElementById('qtyTotalRow').style.display = ''; }
+function hideQtyRow()  { document.getElementById('qtyTotalRow').style.display = 'none'; document.getElementById('qtySelect').value = '1'; }
 
-function hideQuantityRow() {
-  document.getElementById('quantityRow').style.display   = 'none';
-  document.getElementById('totalWeightRow').style.display = 'none';
-  document.getElementById('qtySelect').value = '1';
-  const tw = document.getElementById('totalWeightDisplay');
-  if (tw) tw.textContent = '—';
-}
-
-function onQtyChange()    { updateTotalWeightDisplay(); updateAddButton(); }
-function onWeightInput()  { updateTotalWeightDisplay(); updateAddButton(); }
+function onQtyChange()   { updateTotalWeightDisplay(); updateAddButton(); }
+function onWeightInput() { updateTotalWeightDisplay(); updateAddButton(); }
 
 function updateTotalWeightDisplay() {
   const cat = document.getElementById('catSelect').value;
   if (!cat || getCatMode(cat) !== 'quantity') return;
-  const tw  = document.getElementById('totalWeightDisplay');
-  if (!tw) return;
   const wpi = getCurrentWeightPerItem();
   const qty = parseInt(document.getElementById('qtySelect').value) || 1;
-  tw.textContent = (wpi && wpi > 0) ? (wpi * qty).toFixed(3) + ' kg' : '—';
+  const tw  = document.getElementById('totalWeightDisplay');
+  if (tw) tw.textContent = (wpi && wpi > 0) ? (wpi * qty).toFixed(3) + ' kg' : '—';
 }
 
 // ── Add Button ──
 function updateAddButton() {
   document.getElementById('btnAdd').disabled = !canAdd();
 }
-
 function canAdd() {
   const cat = document.getElementById('catSelect').value;
   if (!cat || !INVENTORY[cat]) return false;
@@ -245,13 +230,12 @@ function canAdd() {
   return wpi !== null && !isNaN(wpi) && wpi > 0;
 }
 
-// ── Add Item ──
+// ── Add Item to Laundry List ──
 function onAddItem() {
   clearAlert();
-  const cat = document.getElementById('catSelect').value;
-  if (!cat || !INVENTORY[cat]) return;
+  const cat      = document.getElementById('catSelect').value;
   const itemName = tomItem ? tomItem.getValue() : '';
-  if (!itemName) return;
+  if (!cat || !INVENTORY[cat] || !itemName) return;
 
   const catData = INVENTORY[cat];
   const mode    = getCatMode(cat);
@@ -264,11 +248,9 @@ function onAddItem() {
   }
 
   const weightPerItem = getCurrentWeightPerItem();
-  if (!weightPerItem || isNaN(weightPerItem) || weightPerItem <= 0) {
-    showAlert('Please enter a valid weight.', 'warn'); return;
-  }
+  if (!weightPerItem || weightPerItem <= 0) { showAlert('Please enter a valid weight.', 'warn'); return; }
 
-  const isManual = document.getElementById('weightInput').style.display !== 'none';
+  const isManual    = document.getElementById('weightInput').style.display !== 'none';
   const qty         = mode === 'quantity' ? (parseInt(document.getElementById('qtySelect').value) || 1) : 1;
   const totalWeight = parseFloat((weightPerItem * qty).toFixed(6));
   const key         = makeKey(cat, displayName);
@@ -278,21 +260,15 @@ function onAddItem() {
   laundryItems.push({ key, displayName, weightPerItem, quantity: qty, totalWeight, isManual, category: cat, mode });
   usedKeys.add(key);
 
-  // Reset form
   document.getElementById('catSelect').value = '';
-  resetItemDropdown();
-  hideComponent();
-  resetWeightArea();
-  hideQuantityRow();
-  updateAddButton();
+  resetItemDropdown(); hideComponent(); resetWeightArea(); hideQtyRow(); updateAddButton();
   renderAll();
 }
 
-// ── Remove Item ──
+// ── Remove Item from Laundry List ──
 function removeItem(key) {
   laundryItems = laundryItems.filter(i => i.key !== key);
   usedKeys.delete(key);
-  // Clean from bags
   bags.forEach(bag => { bag.entries = bag.entries.filter(e => e.key !== key); });
   renderAll();
 }
@@ -306,7 +282,7 @@ function renderAll() {
   broadcastToJotform();
 }
 
-// ── Render List ──
+// ── Render Laundry List ──
 function renderList() {
   const ul    = document.getElementById('laundryList');
   const empty = document.getElementById('listEmpty');
@@ -316,14 +292,13 @@ function renderList() {
   laundryItems.forEach(it => {
     const li = document.createElement('li');
     li.className = 'laundry-item';
-    let weightInfo = it.mode === 'quantity' && it.quantity > 1
-      ? `<span class="item-qty-badge">×${it.quantity}</span>
-         <span class="item-weight-per">${it.weightPerItem.toFixed(3)} kg/ea</span>
-         <span class="item-dots">··</span>
-         <span class="item-weight${it.isManual ? ' manual' : ''}">${it.totalWeight.toFixed(3)} kg</span>`
-      : `<span class="item-dots">··············</span>
-         <span class="item-weight${it.isManual ? ' manual' : ''}">${it.totalWeight.toFixed(3)} kg</span>`;
-    li.innerHTML = `<span class="item-name">${escHtml(it.displayName)}</span>${weightInfo}
+    const isQty = it.mode === 'quantity' && it.quantity > 1;
+    li.innerHTML = `
+      <span class="item-name">${escHtml(it.displayName)}</span>
+      ${isQty ? `<span class="item-qty-badge">×${it.quantity}</span>
+                 <span class="item-weight-per">${it.weightPerItem.toFixed(3)}/ea</span>
+                 <span class="item-dots">··</span>` : `<span class="item-dots">·········</span>`}
+      <span class="item-weight${it.isManual?' manual':''}">${it.totalWeight.toFixed(3)} kg</span>
       <button class="btn btn-danger" onclick="removeItem(${JSON.stringify(it.key)})">✕</button>`;
     ul.appendChild(li);
   });
@@ -336,9 +311,9 @@ function renderTotals() {
   document.getElementById('totalWeight').textContent = totalW.toFixed(3) + ' kg';
 }
 
-// ══════════════════════════════════════════════
-//  BAG GROUPING
-// ══════════════════════════════════════════════
+// ════════════════════════════════════════════
+//  BAG GROUPING — Pool + Columns
+// ════════════════════════════════════════════
 
 // Called from HTML onclick="onSetBags()"
 window.onSetBags = function() {
@@ -346,10 +321,9 @@ window.onSetBags = function() {
   const clamped = Math.max(1, Math.min(20, n));
   while (bags.length < clamped) bags.push({ entries: [] });
   while (bags.length > clamped) bags.pop();
-  bags.forEach(bag => {
-    bag.entries = bag.entries.filter(e => laundryItems.some(i => i.key === e.key));
-  });
-  renderAllBags();
+  cleanBagEntries();
+  document.getElementById('bagWorkspace').style.display = '';
+  renderBagWorkspace();
   renderSummary();
   broadcastToJotform();
 };
@@ -358,125 +332,179 @@ function refreshBagUI() {
   const hasList = laundryItems.length > 0;
   document.getElementById('bagEmpty').style.display = hasList ? 'none' : '';
   document.getElementById('bagSetup').style.display = hasList ? ''     : 'none';
+  cleanBagEntries();
+  if (bags.length > 0) renderBagWorkspace();
+}
+
+function cleanBagEntries() {
   bags.forEach(bag => {
     bag.entries = bag.entries.filter(e => laundryItems.some(i => i.key === e.key));
   });
-  renderAllBags();
 }
 
-function renderAllBags() {
-  const container = document.getElementById('bagsOutput');
+// How many units of a key are assigned across ALL bags
+function totalAssigned(key) {
+  return bags.reduce((s, bag) => {
+    const e = bag.entries.find(e => e.key === key);
+    return s + (e ? e.qty : 0);
+  }, 0);
+}
+
+// Is this item fully assigned? (all units placed in bags)
+function isFullyAssigned(key) {
+  const it = laundryItems.find(i => i.key === key);
+  if (!it) return true;
+  return totalAssigned(key) >= it.quantity;
+}
+
+function renderBagWorkspace() {
+  renderPool();
+  renderBagColumns();
+}
+
+// ── Pool (left column) ──
+function renderPool() {
+  const pool = document.getElementById('poolList');
+  pool.innerHTML = '';
+
+  if (laundryItems.length === 0) {
+    pool.innerHTML = '<div class="pool-empty">No items yet.</div>';
+    return;
+  }
+
+  laundryItems.forEach(it => {
+    const assigned  = totalAssigned(it.key);
+    const remaining = it.quantity - assigned;
+    const full      = remaining <= 0;
+
+    const row = document.createElement('div');
+    row.className = 'pool-item' + (full ? ' assigned' : '');
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'pool-item-name';
+    nameEl.textContent = it.displayName;
+
+    const wtEl = document.createElement('span');
+    wtEl.className = 'pool-item-wt';
+    if (it.mode === 'quantity' && it.quantity > 1) {
+      wtEl.textContent = full
+        ? '✓ all assigned'
+        : `${remaining} remaining`;
+    } else {
+      wtEl.textContent = full ? '✓' : `${it.totalWeight.toFixed(3)} kg`;
+    }
+
+    row.appendChild(nameEl);
+    row.appendChild(wtEl);
+    pool.appendChild(row);
+  });
+}
+
+// ── Bag Columns (right) ──
+function renderBagColumns() {
+  const container = document.getElementById('bagsColumns');
   container.innerHTML = '';
-  if (bags.length === 0) return;
-
-  const grid = document.createElement('div');
-  grid.className = 'bags-grid';
-  bags.forEach((bag, idx) => buildBagCard(grid, bag, idx));
-  container.appendChild(grid);
+  bags.forEach((bag, idx) => container.appendChild(buildBagColumn(bag, idx)));
 }
 
-function buildBagCard(grid, bag, idx) {
+function buildBagColumn(bag, idx) {
   const bagW = getBagWeight(idx);
-  const card = document.createElement('div');
-  card.className = 'bag-card';
+  const col  = document.createElement('div');
+  col.className = 'bag-col';
 
   // Header
   const hdr = document.createElement('div');
-  hdr.className = 'bag-header';
-  hdr.innerHTML = `<h3>Bag ${idx + 1}</h3><span class="bag-weight">${bagW.toFixed(3)} kg</span>`;
-  card.appendChild(hdr);
+  hdr.className = 'bag-col-header';
+  hdr.innerHTML = `<h3>Bag ${idx + 1}</h3><span class="bag-col-weight">${bagW.toFixed(3)} kg</span>`;
+  col.appendChild(hdr);
 
-  // Picker
-  const picker = document.createElement('div');
-  picker.className = 'bag-item-picker';
+  // Adder — only show unfully-assigned items not already in THIS bag
+  const adder = document.createElement('div');
+  adder.className = 'bag-col-adder';
 
-  const lbl = document.createElement('label');
-  lbl.className = 'picker-label';
-  lbl.textContent = 'Select Item to Add';
-  picker.appendChild(lbl);
-
-  // Scrollable listbox — items not yet in this bag
-  const usedInBag = new Set(bag.entries.map(e => e.key));
-  const sel = document.createElement('select');
-  sel.size = Math.min(6, Math.max(3, laundryItems.filter(i => !usedInBag.has(i.key)).length + 1));
-
-  const blank = document.createElement('option');
-  blank.value = ''; blank.textContent = '— Select item —';
-  sel.appendChild(blank);
-
-  laundryItems.forEach(it => {
-    if (usedInBag.has(it.key)) return;
-    const opt = document.createElement('option');
-    opt.value = it.key;
-    opt.textContent = it.mode === 'quantity' && it.quantity > 1
-      ? `${it.displayName} (up to ×${it.quantity})`
-      : `${it.displayName} — ${it.totalWeight.toFixed(3)} kg`;
-    sel.appendChild(opt);
+  const itemsInThisBag = new Set(bag.entries.map(e => e.key));
+  const available = laundryItems.filter(it => {
+    if (itemsInThisBag.has(it.key)) return false; // already in this bag
+    if (isFullyAssigned(it.key)) return false;     // all units used up
+    return true;
   });
-  picker.appendChild(sel);
 
-  // Qty row for quantity items
-  const qtyRow = document.createElement('div');
-  qtyRow.className = 'bag-qty-row';
-  qtyRow.style.display = 'none';
-  const qtyLbl = document.createElement('label');
-  qtyLbl.className = 'picker-label';
-  qtyLbl.style.marginTop = '8px';
-  qtyLbl.textContent = 'Quantity for this bag';
-  const qtySel = document.createElement('select');
-  qtySel.style.cssText = 'width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;outline:none;';
-  qtyRow.appendChild(qtyLbl);
-  qtyRow.appendChild(qtySel);
-  picker.appendChild(qtyRow);
+  if (available.length > 0) {
+    const sel = document.createElement('select');
+    sel.innerHTML = '<option value="">— Select item —</option>';
+    available.forEach(it => {
+      const opt = document.createElement('option');
+      opt.value = it.key;
+      const remaining = it.quantity - totalAssigned(it.key);
+      const suffix = it.mode === 'quantity' && it.quantity > 1
+        ? ` (${remaining} left)`
+        : ` — ${it.totalWeight.toFixed(3)}kg`;
+      opt.textContent = it.displayName + suffix;
+      sel.appendChild(opt);
+    });
+    adder.appendChild(sel);
 
-  sel.addEventListener('change', () => {
-    const key = sel.value;
-    if (!key) { qtyRow.style.display = 'none'; addBtn.disabled = true; return; }
-    addBtn.disabled = false;
-    const it = laundryItems.find(i => i.key === key);
-    if (it && it.mode === 'quantity' && it.quantity > 1) {
-      qtySel.innerHTML = '';
-      for (let q = 1; q <= it.quantity; q++) {
-        const o = document.createElement('option');
-        o.value = q; o.textContent = q; qtySel.appendChild(o);
+    // Qty row for quantity items
+    const qtyRow = document.createElement('div');
+    qtyRow.className = 'bag-adder-qty';
+    qtyRow.style.display = 'none';
+    const qtyLbl = document.createElement('span');
+    qtyLbl.textContent = 'Qty:';
+    const qtySel = document.createElement('select');
+    qtyRow.appendChild(qtyLbl);
+    qtyRow.appendChild(qtySel);
+    adder.appendChild(qtyRow);
+
+    const addBtn = document.createElement('button');
+    addBtn.className = 'btn btn-primary';
+    addBtn.textContent = '+ Add to Bag';
+    addBtn.disabled = true;
+    adder.appendChild(addBtn);
+
+    sel.addEventListener('change', () => {
+      const key = sel.value;
+      if (!key) { addBtn.disabled = true; qtyRow.style.display = 'none'; return; }
+      addBtn.disabled = false;
+      const it = available.find(i => i.key === key);
+      if (it && it.mode === 'quantity' && it.quantity > 1) {
+        const remaining = it.quantity - totalAssigned(it.key);
+        qtySel.innerHTML = '';
+        for (let q = 1; q <= remaining; q++) {
+          const o = document.createElement('option');
+          o.value = q; o.textContent = q; qtySel.appendChild(o);
+        }
+        qtyRow.style.display = '';
+      } else {
+        qtyRow.style.display = 'none';
       }
-      qtyRow.style.display = '';
-    } else {
-      qtyRow.style.display = 'none';
-    }
-  });
+    });
 
-  // Add button
-  const addBtn = document.createElement('button');
-  addBtn.className = 'btn btn-primary';
-  addBtn.style.cssText = 'margin-top:10px;width:100%;';
-  addBtn.textContent = 'Add to Bag';
-  addBtn.disabled = true;
-  picker.appendChild(addBtn);
+    addBtn.addEventListener('click', () => {
+      const key = sel.value;
+      if (!key) return;
+      const it = laundryItems.find(i => i.key === key);
+      if (!it) return;
+      const qty = (it.mode === 'quantity' && it.quantity > 1)
+        ? (parseInt(qtySel.value) || 1) : 1;
+      bag.entries.push({ key, qty });
+      renderBagWorkspace();
+      renderSummary();
+      broadcastToJotform();
+    });
+  } else {
+    adder.innerHTML = '<div style="font-size:11px;color:var(--muted);font-style:italic;">All items assigned.</div>';
+  }
+  col.appendChild(adder);
 
-  addBtn.addEventListener('click', () => {
-    const key = sel.value;
-    if (!key) return;
-    const it = laundryItems.find(i => i.key === key);
-    if (!it) return;
-    const qty = (it.mode === 'quantity' && it.quantity > 1) ? (parseInt(qtySel.value) || 1) : 1;
-    bag.entries.push({ key, qty });
-    renderAllBags();
-    renderSummary();
-    broadcastToJotform();
-  });
-
-  card.appendChild(picker);
-
-  // Entries
-  const itemsList = document.createElement('div');
-  itemsList.className = 'bag-items';
+  // Entries list
+  const entries = document.createElement('div');
+  entries.className = 'bag-col-entries';
 
   if (bag.entries.length === 0) {
     const em = document.createElement('div');
-    em.className = 'bag-no-items';
-    em.textContent = 'No items added yet.';
-    itemsList.appendChild(em);
+    em.className = 'bag-no-entries';
+    em.textContent = 'Empty';
+    entries.appendChild(em);
   } else {
     bag.entries.forEach((entry, eIdx) => {
       const it = laundryItems.find(i => i.key === entry.key);
@@ -485,49 +513,48 @@ function buildBagCard(grid, bag, idx) {
       const qStr   = it.mode === 'quantity' && entry.qty > 1 ? ` ×${entry.qty}` : '';
 
       const row = document.createElement('div');
-      row.className = 'bag-item-row';
+      row.className = 'bag-entry-row';
 
       const nm = document.createElement('span');
-      nm.className = 'bag-item-name';
-      nm.textContent = `• ${it.displayName}${qStr}`;
+      nm.className = 'bag-entry-name';
+      nm.textContent = it.displayName + qStr;
 
       const wt = document.createElement('span');
-      wt.className = 'bag-item-wt';
-      wt.textContent = `${entryW.toFixed(3)} kg`;
+      wt.className = 'bag-entry-wt';
+      wt.textContent = entryW.toFixed(3) + ' kg';
 
       const rm = document.createElement('button');
-      rm.className = 'bag-item-remove';
+      rm.className = 'bag-entry-rm';
       rm.textContent = '✕';
       rm.addEventListener('click', () => {
         bag.entries.splice(eIdx, 1);
-        renderAllBags();
+        renderBagWorkspace();
         renderSummary();
         broadcastToJotform();
       });
 
       row.appendChild(nm); row.appendChild(wt); row.appendChild(rm);
-      itemsList.appendChild(row);
+      entries.appendChild(row);
     });
   }
-  card.appendChild(itemsList);
+  col.appendChild(entries);
 
+  // Footer total
   if (bagW > 0) {
-    const tr = document.createElement('div');
-    tr.className = 'bag-total-row';
-    tr.innerHTML = `Total: <strong>${bagW.toFixed(3)} kg</strong>`;
-    card.appendChild(tr);
+    const ft = document.createElement('div');
+    ft.className = 'bag-col-footer';
+    ft.innerHTML = `Total: <strong>${bagW.toFixed(3)} kg</strong>`;
+    col.appendChild(ft);
   }
 
-  grid.appendChild(card);
+  return col;
 }
 
 function getBagWeight(idx) {
-  let w = 0;
-  bags[idx].entries.forEach(e => {
+  return bags[idx].entries.reduce((s, e) => {
     const it = laundryItems.find(i => i.key === e.key);
-    if (it) w += it.mode === 'quantity' ? it.weightPerItem * e.qty : it.totalWeight;
-  });
-  return w;
+    return s + (it ? (it.mode === 'quantity' ? it.weightPerItem * e.qty : it.totalWeight) : 0);
+  }, 0);
 }
 
 // ── Summary ──
@@ -575,16 +602,15 @@ function renderSummary() {
   const text   = buildSummaryText();
   window.latestSubmissionText = text;
   const totalW = laundryItems.reduce((s, i) => s + i.totalWeight, 0);
-  const gt     = document.getElementById('grandTotalWeight');
+  const gt = document.getElementById('grandTotalWeight');
   if (gt) gt.textContent = totalW.toFixed(3) + ' kg';
 }
 
 // ── JotForm ──
 function setupJotform() {
   if (typeof JFCustomWidget === 'undefined') return;
-  JFCustomWidget.subscribe('submit', () => {
-    JFCustomWidget.sendSubmit({ valid: true, value: window.latestSubmissionText });
-  });
+  JFCustomWidget.subscribe('submit', () =>
+    JFCustomWidget.sendSubmit({ valid: true, value: window.latestSubmissionText }));
   JFCustomWidget.subscribe('ready', broadcastToJotform);
 }
 
@@ -601,23 +627,23 @@ function broadcastToJotform() {
         t.dispatchEvent(new Event('input',  { bubbles: true }));
         t.dispatchEvent(new Event('change', { bubbles: true }));
       }
-      window.parent.postMessage(JSON.stringify({ type:'widgetValue', fieldId:'input_82', value, valid:true }), '*');
+      window.parent.postMessage(
+        JSON.stringify({ type:'widgetValue', fieldId:'input_82', value, valid:true }), '*');
     }
   } catch(e) {}
 }
 
 // ── Future: Transaction Loader ──
-window.loadTransaction = function(txnNumber) {
-  console.log('[loadTransaction] Not yet implemented:', txnNumber);
-};
+window.loadTransaction = txn => console.log('[loadTransaction] Not yet implemented:', txn);
 
 window.addItemProgrammatically = function(category, itemName, component, weightPerItem, quantity = 1) {
   const displayName = component ? `${itemName} - ${component}` : itemName;
   const key = makeKey(category, displayName);
   if (usedKeys.has(key)) return false;
   const mode = getCatMode(category);
-  const totalWeight = parseFloat((weightPerItem * quantity).toFixed(6));
-  laundryItems.push({ key, displayName, weightPerItem, quantity, totalWeight, isManual: false, category, mode });
+  laundryItems.push({ key, displayName, weightPerItem, quantity,
+    totalWeight: parseFloat((weightPerItem * quantity).toFixed(6)),
+    isManual: false, category, mode });
   usedKeys.add(key);
   renderAll();
   return true;
@@ -625,12 +651,10 @@ window.addItemProgrammatically = function(category, itemName, component, weightP
 
 // ── Utilities ──
 function makeKey(cat, name) { return `${cat}::${name}`; }
-
-function escHtml(str) {
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-
-function showAlert(msg, type = 'warn') {
+function showAlert(msg, type='warn') {
   document.getElementById('alertBox').innerHTML = `<div class="alert alert-${type}">${escHtml(msg)}</div>`;
 }
 function clearAlert() { document.getElementById('alertBox').innerHTML = ''; }
