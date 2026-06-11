@@ -477,133 +477,204 @@ function renderTotals() {
 //  Manual Bag Builder
 // ─────────────────────────────────────────────
 
-let bags = []; // each bag: { items: Set of laundryItem keys, tomSelect: instance }
+// bags[i] = { entries: [ { key, qty } ] }
+// key = laundryItem.key, qty = how many units going in this bag (for quantity-mode items)
+let bags = [];
 
 function initBagSection() {
-  const btnAddBag = document.getElementById('btnAddBag');
-  btnAddBag.addEventListener('click', addNewBag);
-  refreshBagUI();
+  document.getElementById('btnAddBag').addEventListener('click', addNewBag);
 }
 
-/** Called whenever laundryItems changes — refreshes visibility + all bag dropdowns */
+/** Called after laundryItems changes */
 function refreshBagUI() {
   const hasList = laundryItems.length > 0;
   document.getElementById('bagEmpty').style.display  = hasList ? 'none' : '';
   document.getElementById('btnAddBag').style.display = hasList ? '' : 'none';
 
-  // If there are bags, auto-start Bag 1
+  // Remove entries whose keys no longer exist
+  bags.forEach(bag => {
+    bag.entries = bag.entries.filter(e => laundryItems.some(i => i.key === e.key));
+  });
+
+  // Auto-create Bag 1
   if (hasList && bags.length === 0) addNewBag();
-
-  // Rebuild every bag's dropdown to reflect current laundryItems
-  bags.forEach((bag, idx) => rebuildBagDropdown(idx));
-
-  renderBagsHTML();
+  else renderAllBags();
 }
 
 function addNewBag() {
   if (laundryItems.length === 0) return;
-  bags.push({ items: new Set() });
-  renderBagsHTML();
-  // Rebuild last bag's dropdown
-  rebuildBagDropdown(bags.length - 1);
+  bags.push({ entries: [] });
+  renderAllBags();
 }
 
 function removeBag(idx) {
-  if (bags[idx] && bags[idx].tomSelect) bags[idx].tomSelect.destroy();
   bags.splice(idx, 1);
-  renderBagsHTML();
-  bags.forEach((_, i) => rebuildBagDropdown(i));
-  renderAll();
+  renderAllBags();
+  renderSummary();
+  broadcastToJotform();
 }
 
-function renderBagsHTML() {
+// ── Full re-render of the bags grid ──
+function renderAllBags() {
   const container = document.getElementById('bagsOutput');
-  if (bags.length === 0) { container.innerHTML = ''; return; }
+  container.innerHTML = '';
+  if (bags.length === 0) return;
 
-  let html = '<div class="bags-grid" id="bagsGrid">';
-  bags.forEach((bag, idx) => {
-    const bagW = getBagWeight(bag);
-    const bagItemsHTML = bag.items.size === 0
-      ? '<div class="bag-no-items">No items selected yet.</div>'
-      : [...bag.items].map(key => {
-          const it = laundryItems.find(i => i.key === key);
-          if (!it) return '';
-          const qStr = it.mode === 'quantity' && it.quantity > 1 ? ` ×${it.quantity}` : '';
-          return `<div class="bag-item-row">
-            • ${escHtml(it.displayName)}${qStr}
-            <span class="bag-item-wt">${it.totalWeight.toFixed(3)} kg</span>
-            <button class="bag-item-remove" onclick="removeBagItem(${idx}, ${JSON.stringify(key)})">✕</button>
-          </div>`;
-        }).join('');
-
-    html += `
-      <div class="bag-card" id="bagCard_${idx}">
-        <div class="bag-header">
-          <h3>Bag ${idx + 1}</h3>
-          <span class="bag-weight">${bagW.toFixed(3)} kg</span>
-          <button class="bag-delete-btn" onclick="removeBag(${idx})">🗑</button>
-        </div>
-        <div class="bag-item-picker" style="margin:12px 0 8px;">
-          <label style="font-size:12px;font-weight:600;color:#718096;text-transform:uppercase;letter-spacing:.4px;">Add Item to Bag</label>
-          <select id="bagSelect_${idx}" placeholder="Select item…"></select>
-        </div>
-        <div class="bag-items">${bagItemsHTML}</div>
-        ${bagW > 0 ? `<div class="bag-total-row">Total: <strong>${bagW.toFixed(3)} kg</strong></div>` : ''}
-      </div>`;
-  });
-  html += '</div>';
-  container.innerHTML = html;
-
-  // Re-init Tom Select for each bag after DOM rebuild
-  bags.forEach((_, idx) => rebuildBagDropdown(idx));
+  const grid = document.createElement('div');
+  grid.className = 'bags-grid';
+  bags.forEach((bag, idx) => renderOneBag(grid, bag, idx));
+  container.appendChild(grid);
 }
 
-function rebuildBagDropdown(idx) {
-  const sel = document.getElementById(`bagSelect_${idx}`);
-  if (!sel) return;
+function renderOneBag(grid, bag, idx) {
+  const bagW = getBagWeight(idx);
+  const card = document.createElement('div');
+  card.className = 'bag-card';
+  card.id = `bagCard_${idx}`;
 
-  // Destroy existing Tom Select
-  if (bags[idx].tomSelect) { bags[idx].tomSelect.destroy(); bags[idx].tomSelect = null; }
+  // ── Header ──
+  const header = document.createElement('div');
+  header.className = 'bag-header';
+  header.innerHTML = `
+    <h3>Bag ${idx + 1}</h3>
+    <span class="bag-weight">${bagW.toFixed(3)} kg</span>`;
+  const delBtn = document.createElement('button');
+  delBtn.className = 'bag-delete-btn';
+  delBtn.textContent = '🗑';
+  delBtn.onclick = () => removeBag(idx);
+  header.appendChild(delBtn);
+  card.appendChild(header);
 
-  // Build options: items not already in THIS bag
-  sel.innerHTML = '<option value=""></option>';
+  // ── Item picker ──
+  const picker = document.createElement('div');
+  picker.className = 'bag-item-picker';
+  picker.innerHTML = `<label class="picker-label">Add Item to Bag</label>`;
+
+  const sel = document.createElement('select');
+  sel.id = `bagSelect_${idx}`;
+  sel.innerHTML = '<option value="">— Select item —</option>';
+
+  // Available items = not yet added to this bag
+  const usedKeys = new Set(bag.entries.map(e => e.key));
   laundryItems.forEach(it => {
-    if (!bags[idx].items.has(it.key)) {
+    if (!usedKeys.has(it.key)) {
       const opt = document.createElement('option');
       opt.value = it.key;
-      const qStr = it.mode === 'quantity' && it.quantity > 1 ? ` ×${it.quantity}` : '';
-      opt.textContent = `${it.displayName}${qStr} (${it.totalWeight.toFixed(3)} kg)`;
+      const qStr = it.mode === 'quantity' && it.quantity > 1 ? ` (max qty: ${it.quantity})` : ` — ${it.totalWeight.toFixed(3)} kg`;
+      opt.textContent = it.displayName + qStr;
       sel.appendChild(opt);
     }
   });
+  picker.appendChild(sel);
 
-  bags[idx].tomSelect = new TomSelect(`#bagSelect_${idx}`, {
-    placeholder: 'Search & select item…',
-    maxOptions: 300,
-    onChange(key) {
-      if (!key) return;
-      bags[idx].items.add(key);
-      bags[idx].tomSelect.clear(true);
-      renderBagsHTML();
-      bags.forEach((_, i) => rebuildBagDropdown(i));
-      renderAll();
+  // Qty selector — shown only after item is chosen, for quantity-mode items
+  const qtyRow = document.createElement('div');
+  qtyRow.className = 'bag-qty-row';
+  qtyRow.style.display = 'none';
+  qtyRow.innerHTML = `
+    <label class="picker-label" style="margin-top:8px;">Quantity for this bag</label>
+    <select id="bagQty_${idx}"></select>`;
+  picker.appendChild(qtyRow);
+
+  // Add to bag button
+  const addBtn = document.createElement('button');
+  addBtn.className = 'btn btn-primary';
+  addBtn.style.cssText = 'margin-top:10px;width:100%;';
+  addBtn.textContent = 'Add to Bag';
+  addBtn.disabled = true;
+  picker.appendChild(addBtn);
+
+  // Wire up item select → show qty if needed
+  sel.addEventListener('change', () => {
+    const key = sel.value;
+    if (!key) { addBtn.disabled = true; qtyRow.style.display = 'none'; return; }
+    addBtn.disabled = false;
+    const it = laundryItems.find(i => i.key === key);
+    if (it && it.mode === 'quantity' && it.quantity > 1) {
+      const qtySel = qtyRow.querySelector('select');
+      qtySel.innerHTML = '';
+      for (let q = 1; q <= it.quantity; q++) {
+        const o = document.createElement('option');
+        o.value = q;
+        o.textContent = q;
+        qtySel.appendChild(o);
+      }
+      qtyRow.style.display = '';
+    } else {
+      qtyRow.style.display = 'none';
     }
   });
-}
 
-function removeBagItem(bagIdx, key) {
-  if (!bags[bagIdx]) return;
-  bags[bagIdx].items.delete(key);
-  renderBagsHTML();
-  bags.forEach((_, i) => rebuildBagDropdown(i));
-  renderAll();
-}
-
-function getBagWeight(bag) {
-  let w = 0;
-  bag.items.forEach(key => {
+  // Wire up Add to Bag button
+  addBtn.addEventListener('click', () => {
+    const key = sel.value;
+    if (!key) return;
     const it = laundryItems.find(i => i.key === key);
-    if (it) w += it.totalWeight;
+    if (!it) return;
+    let qty = 1;
+    if (it.mode === 'quantity' && it.quantity > 1) {
+      qty = parseInt(qtyRow.querySelector('select').value) || 1;
+    }
+    bag.entries.push({ key, qty });
+    renderAllBags();
+    renderSummary();
+    broadcastToJotform();
+  });
+
+  card.appendChild(picker);
+
+  // ── Entries list ──
+  const itemsList = document.createElement('div');
+  itemsList.className = 'bag-items';
+
+  if (bag.entries.length === 0) {
+    itemsList.innerHTML = '<div class="bag-no-items">No items added yet.</div>';
+  } else {
+    bag.entries.forEach((entry, eIdx) => {
+      const it = laundryItems.find(i => i.key === entry.key);
+      if (!it) return;
+      const entryW = it.mode === 'quantity'
+        ? it.weightPerItem * entry.qty
+        : it.totalWeight;
+      const qStr = it.mode === 'quantity' && it.quantity > 1 ? ` ×${entry.qty}` : '';
+
+      const row = document.createElement('div');
+      row.className = 'bag-item-row';
+      row.innerHTML = `
+        <span class="bag-item-name">• ${escHtml(it.displayName)}${qStr}</span>
+        <span class="bag-item-wt">${entryW.toFixed(3)} kg</span>`;
+      const rmBtn = document.createElement('button');
+      rmBtn.className = 'bag-item-remove';
+      rmBtn.textContent = '✕';
+      rmBtn.onclick = () => {
+        bag.entries.splice(eIdx, 1);
+        renderAllBags();
+        renderSummary();
+        broadcastToJotform();
+      };
+      row.appendChild(rmBtn);
+      itemsList.appendChild(row);
+    });
+  }
+  card.appendChild(itemsList);
+
+  // ── Bag total ──
+  if (bagW > 0) {
+    const totalRow = document.createElement('div');
+    totalRow.className = 'bag-total-row';
+    totalRow.innerHTML = `Total: <strong>${bagW.toFixed(3)} kg</strong>`;
+    card.appendChild(totalRow);
+  }
+
+  grid.appendChild(card);
+}
+
+function getBagWeight(idx) {
+  let w = 0;
+  bags[idx].entries.forEach(entry => {
+    const it = laundryItems.find(i => i.key === entry.key);
+    if (!it) return;
+    w += it.mode === 'quantity' ? it.weightPerItem * entry.qty : it.totalWeight;
   });
   return w;
 }
@@ -616,20 +687,22 @@ function buildSummaryText() {
   const totalW = laundryItems.reduce((s, i) => s + i.totalWeight, 0);
   let lines = [];
 
-  if (bags.length > 0 && bags.some(b => b.items.size > 0)) {
+  if (bags.length > 0 && bags.some(b => b.entries.length > 0)) {
     bags.forEach((bag, idx) => {
-      if (bag.items.size === 0) return;
-      const bagW = getBagWeight(bag);
+      if (bag.entries.length === 0) return;
+      const bagW = getBagWeight(idx);
       lines.push(`--- BAG ${idx + 1} (${bagW.toFixed(3)}kg) ---`);
-      bag.items.forEach(key => {
-        const it = laundryItems.find(i => i.key === key);
+      bag.entries.forEach(entry => {
+        const it = laundryItems.find(i => i.key === entry.key);
         if (!it) return;
-        lines.push(`ITEM NAME: ${it.displayName}`);
-        if (it.mode === 'quantity' && it.quantity > 1) {
-          lines.push(`QUANTITY: ${it.quantity}`);
+        const entryW = it.mode === 'quantity' ? it.weightPerItem * entry.qty : it.totalWeight;
+        const qStr = it.mode === 'quantity' && entry.qty > 1 ? ` ×${entry.qty}` : '';
+        lines.push(`ITEM NAME: ${it.displayName}${qStr}`);
+        if (it.mode === 'quantity' && entry.qty > 1) {
+          lines.push(`QUANTITY: ${entry.qty}`);
           lines.push(`WEIGHT PER ITEM: ${it.weightPerItem.toFixed(3)}kg`);
         }
-        lines.push(`WEIGHT: ${it.totalWeight.toFixed(3)}kg`);
+        lines.push(`WEIGHT: ${entryW.toFixed(3)}kg`);
         lines.push('');
       });
     });
