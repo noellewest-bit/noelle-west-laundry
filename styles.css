@@ -1,486 +1,624 @@
-/* ========================================
-   Noelle West Laundry Calculator
-   Styles
-   ======================================== */
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
-:root {
-  --bg:        #F0F2F5;
-  --surface:   #FFFFFF;
-  --border:    #E2E8F0;
-  --brand:     #4A6FA5;
-  --brand-dk:  #3A5A8C;
-  --accent:    #E8B84B;
-  --danger:    #E05252;
-  --success:   #3DAB6A;
-  --text:      #1A202C;
-  --muted:     #718096;
-  --radius:    12px;
-  --shadow:    0 2px 12px rgba(0,0,0,0.08);
+/**
+ * Noelle West Laundry Calculator — app.js
+ * Weight-only categories: BGI, BGS, PGI, PGS, PGC, FIL, MG, CD, MS, CS, PET, S-UPPER
+ * Quantity categories:    BCPO, BOY, BPSC, BPO, BPOL, BPS, COAT BARONG, BCC, BPOC, VST, POLO, ACC, PEN, PANTS
+ */
+ 
+// ─────────────────────────────────────────────
+//  Category mode config
+// ─────────────────────────────────────────────
+const WEIGHT_ONLY_CATS = new Set([
+  'BGI','BGS','PGI','PGS','PGC','FIL','MG','CD','MS','CS','PET','S-UPPER'
+]);
+const QUANTITY_CATS = new Set([
+  'BCPO','BOY','BPSC','BPO','BPOL','BPS','COAT BARONG','BCC','BPOC','VST','POLO','ACC','PEN','PANTS'
+]);
+ 
+function getCatMode(cat) {
+  if (WEIGHT_ONLY_CATS.has(cat)) return 'weight-only';
+  if (QUANTITY_CATS.has(cat))    return 'quantity';
+  return 'weight-only'; // fallback
 }
-
-* { box-sizing: border-box; margin: 0; padding: 0; }
-
-body {
-  font-family: 'Inter', sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 14px;
-  line-height: 1.5;
-  min-height: 100vh;
+ 
+// ─────────────────────────────────────────────
+//  State
+// ─────────────────────────────────────────────
+let INVENTORY = {};
+let laundryItems = [];   // { key, displayName, weightPerItem, quantity, totalWeight, isManual, category }
+let usedKeys   = new Set();
+let tomItem    = null;
+ 
+window.latestSubmissionText = '';
+ 
+// ─────────────────────────────────────────────
+//  Boot
+// ─────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadInventory();
+  buildCategoryDropdown();
+  bindEvents();
+  setupJotform();
+  renderAll();
+});
+ 
+// ─────────────────────────────────────────────
+//  Load Inventory
+// ─────────────────────────────────────────────
+async function loadInventory() {
+  try {
+    const res = await fetch('master-items.json');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    INVENTORY = await res.json();
+  } catch (e) {
+    showAlert('⚠️ Could not load inventory data. Make sure master-items.json is present.', 'error');
+    console.error('Inventory load failed:', e);
+  }
 }
-
-/* ---- Layout ---- */
-.app-wrapper {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 20px 16px 40px;
+ 
+// ─────────────────────────────────────────────
+//  Category Dropdown
+// ─────────────────────────────────────────────
+function buildCategoryDropdown() {
+  const sel = document.getElementById('catSelect');
+  Object.keys(INVENTORY).sort().forEach(cat => {
+    const opt = document.createElement('option');
+    opt.value = cat;
+    opt.textContent = cat;
+    sel.appendChild(opt);
+  });
 }
-
-.app-header {
-  text-align: center;
-  margin-bottom: 24px;
+ 
+// ─────────────────────────────────────────────
+//  Bind Events
+// ─────────────────────────────────────────────
+function bindEvents() {
+  document.getElementById('catSelect').addEventListener('change', onCategoryChange);
+  document.getElementById('componentSelect').addEventListener('change', onComponentChange);
+  document.getElementById('weightInput').addEventListener('input', onWeightInput);
+  document.getElementById('qtySelect').addEventListener('change', onQtyChange);
+  document.getElementById('btnAdd').addEventListener('click', onAddItem);
+  document.getElementById('bagToggle').addEventListener('change', onBagToggle);
+  document.getElementById('bagMaxWeight').addEventListener('input', renderBags);
+  document.getElementById('btnCopy').addEventListener('click', copySummary);
 }
-
-.app-header h1 {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--brand);
-  letter-spacing: -0.3px;
+ 
+// ─────────────────────────────────────────────
+//  Category Change
+// ─────────────────────────────────────────────
+function onCategoryChange() {
+  const cat = document.getElementById('catSelect').value;
+  clearAlert();
+  resetItemDropdown();
+  hideComponent();
+  resetWeightArea();
+  hideQuantityRow();
+  updateAddButton();
+ 
+  if (!cat || !INVENTORY[cat]) return;
+ 
+  const catData  = INVENTORY[cat];
+  const available = catData.items.filter(it => !usedKeys.has(makeKey(cat, it.name)));
+  buildItemDropdown(cat, available);
+ 
+  // Show quantity row immediately if this is a quantity category
+  if (getCatMode(cat) === 'quantity') showQuantityRow();
 }
-
-.app-header p {
-  color: var(--muted);
-  font-size: 13px;
-  margin-top: 4px;
+ 
+// ─────────────────────────────────────────────
+//  Item Dropdown (Tom Select)
+// ─────────────────────────────────────────────
+function resetItemDropdown() {
+  if (tomItem) { tomItem.destroy(); tomItem = null; }
+  const sel = document.getElementById('itemSelect');
+  sel.innerHTML = '<option value="">— Select category first —</option>';
 }
-
-/* ---- Cards ---- */
-.card {
-  background: var(--surface);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 20px;
-  margin-bottom: 16px;
-  border: 1px solid var(--border);
+ 
+function buildItemDropdown(cat, items) {
+  if (tomItem) { tomItem.destroy(); tomItem = null; }
+  const sel = document.getElementById('itemSelect');
+  sel.innerHTML = '<option value=""></option>';
+  items.forEach(it => {
+    const opt = document.createElement('option');
+    opt.value = it.name;
+    opt.textContent = it.name;
+    sel.appendChild(opt);
+  });
+  tomItem = new TomSelect('#itemSelect', {
+    placeholder: 'Search item…',
+    maxOptions: 200,
+    sortField: { field: 'text', direction: 'asc' },
+    onChange(val) { onItemChange(cat, val); }
+  });
 }
-
-.card-title {
-  font-size: 13px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--brand);
-  margin-bottom: 16px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border);
+ 
+// ─────────────────────────────────────────────
+//  Item Change
+// ─────────────────────────────────────────────
+function onItemChange(cat, itemName) {
+  hideComponent();
+  resetWeightArea();
+  updateAddButton();
+  if (!itemName || !INVENTORY[cat]) return;
+ 
+  const catData = INVENTORY[cat];
+  const item    = catData.items.find(i => i.name === itemName);
+  if (!item) return;
+ 
+  const mode = getCatMode(cat);
+ 
+  if (catData.type === 'components') {
+    showComponentDropdown(catData.components, item);
+  } else if (catData.type === 'auto') {
+    if (item.weight !== null && item.weight !== undefined) {
+      setWeightDisplay(item.weight, mode);
+    } else {
+      showManualWeightInput(mode);
+    }
+  } else {
+    // manual
+    showManualWeightInput(mode);
+  }
+ 
+  updateTotalWeightDisplay();
+  updateAddButton();
 }
-
-/* ---- Form Elements ---- */
-.form-row {
-  display: grid;
-  gap: 12px;
-  margin-bottom: 12px;
+ 
+// ─────────────────────────────────────────────
+//  Component Dropdown
+// ─────────────────────────────────────────────
+function showComponentDropdown(componentNames, item) {
+  const grp = document.getElementById('componentGroup');
+  const sel  = document.getElementById('componentSelect');
+  sel.innerHTML = '<option value="">— Select component —</option>';
+  componentNames.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c;
+    const w = item.components[c];
+    opt.textContent = c + (w !== null && w !== undefined ? ` (${w} kg)` : '');
+    sel.appendChild(opt);
+  });
+  grp.style.display = '';
+  updateAddButton();
 }
-
-.form-row.cols-2 { grid-template-columns: 1fr 1fr; }
-.form-row.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
-
-@media (max-width: 560px) {
-  .form-row.cols-2,
-  .form-row.cols-3 { grid-template-columns: 1fr; }
+ 
+function hideComponent() {
+  document.getElementById('componentGroup').style.display = 'none';
+  document.getElementById('componentSelect').value = '';
 }
-
-.form-group label {
-  display: block;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  margin-bottom: 6px;
+ 
+function onComponentChange() {
+  const cat      = document.getElementById('catSelect').value;
+  const itemName = tomItem ? tomItem.getValue() : '';
+  const comp     = document.getElementById('componentSelect').value;
+  resetWeightArea();
+  if (!comp || !itemName || !INVENTORY[cat]) { updateAddButton(); return; }
+ 
+  const item = INVENTORY[cat].items.find(i => i.name === itemName);
+  if (!item) return;
+  const mode = getCatMode(cat);
+  const w = item.components[comp];
+  if (w !== null && w !== undefined) {
+    setWeightDisplay(w, mode);
+  } else {
+    showManualWeightInput(mode);
+  }
+  updateTotalWeightDisplay();
+  updateAddButton();
 }
-
-.form-group select,
-.form-group input[type="text"],
-.form-group input[type="number"] {
-  width: 100%;
-  padding: 9px 12px;
-  border: 1.5px solid var(--border);
-  border-radius: 8px;
-  font-size: 14px;
-  font-family: inherit;
-  color: var(--text);
-  background: #FAFBFC;
-  transition: border-color 0.15s;
-  outline: none;
+ 
+// ─────────────────────────────────────────────
+//  Weight Area — shared helpers
+// ─────────────────────────────────────────────
+ 
+/**
+ * Show the read-only weight display chip.
+ * mode: 'weight-only' | 'quantity'
+ */
+function setWeightDisplay(val, mode) {
+  const disp  = document.getElementById('weightDisplay');
+  const inp   = document.getElementById('weightInput');
+  const label = document.getElementById('weightLabel');
+ 
+  label.textContent = mode === 'quantity' ? 'Weight Per Item' : 'Weight';
+ 
+  disp.classList.remove('empty', 'hidden');
+  disp.innerHTML = `<span class="weight-val">${parseFloat(val).toFixed(3)}</span><span class="weight-unit">kg</span>`;
+  inp.classList.add('hidden');
+  inp.value = '';
+ 
+  // Store on the display element for easy retrieval
+  disp.dataset.weight = val;
 }
-
-.form-group select:focus,
-.form-group input:focus {
-  border-color: var(--brand);
-  background: #fff;
+ 
+function showManualWeightInput(mode) {
+  const disp  = document.getElementById('weightDisplay');
+  const inp   = document.getElementById('weightInput');
+  const label = document.getElementById('weightLabel');
+ 
+  label.textContent = mode === 'quantity' ? 'Weight Per Item' : 'Weight';
+ 
+  disp.classList.add('hidden');
+  delete disp.dataset.weight;
+  inp.classList.remove('hidden');
+  inp.value = '';
+  inp.placeholder = mode === 'quantity' ? 'Weight per item (kg)' : 'Enter kg (e.g. 0.30)';
+  inp.focus();
 }
-
-.weight-display {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
-  border: 1.5px solid var(--border);
-  border-radius: 8px;
-  background: #F7F9FC;
-  min-height: 40px;
+ 
+function resetWeightArea() {
+  const disp  = document.getElementById('weightDisplay');
+  const inp   = document.getElementById('weightInput');
+  const label = document.getElementById('weightLabel');
+ 
+  label.textContent = 'Weight';
+  disp.classList.add('empty');
+  disp.classList.remove('hidden');
+  disp.innerHTML = '<span class="weight-val">—</span><span class="weight-unit">kg</span>';
+  delete disp.dataset.weight;
+  inp.classList.add('hidden');
+  inp.value = '';
+ 
+  // Also clear total weight display
+  const tw = document.getElementById('totalWeightDisplay');
+  if (tw) tw.textContent = '—';
 }
-
-.weight-display .weight-val {
-  font-weight: 700;
-  font-size: 15px;
-  color: var(--brand);
+ 
+// ─────────────────────────────────────────────
+//  Quantity Row
+// ─────────────────────────────────────────────
+function showQuantityRow() {
+  document.getElementById('quantityRow').classList.remove('hidden');
+  document.getElementById('totalWeightRow').classList.remove('hidden');
+  document.getElementById('qtySelect').value = '1';
 }
-
-.weight-display .weight-unit {
-  font-size: 12px;
-  color: var(--muted);
+ 
+function hideQuantityRow() {
+  document.getElementById('quantityRow').classList.add('hidden');
+  document.getElementById('totalWeightRow').classList.add('hidden');
+  document.getElementById('qtySelect').value = '1';
+  const tw = document.getElementById('totalWeightDisplay');
+  if (tw) tw.textContent = '—';
 }
-
-.weight-display.empty .weight-val {
-  color: var(--muted);
-  font-weight: 400;
-  font-size: 13px;
+ 
+function onQtyChange() {
+  updateTotalWeightDisplay();
+  updateAddButton();
 }
-
-/* ---- Tom Select overrides ---- */
-.ts-wrapper {
-  width: 100%;
+ 
+function onWeightInput() {
+  updateTotalWeightDisplay();
+  updateAddButton();
 }
-
-.ts-control {
-  padding: 6px 10px !important;
-  border: 1.5px solid var(--border) !important;
-  border-radius: 8px !important;
-  background: #FAFBFC !important;
-  box-shadow: none !important;
-  font-family: 'Inter', sans-serif !important;
-  font-size: 14px !important;
-  min-height: 40px !important;
+ 
+/** Reads current weight-per-item value from display or input */
+function getCurrentWeightPerItem() {
+  const disp = document.getElementById('weightDisplay');
+  const inp  = document.getElementById('weightInput');
+  if (!inp.classList.contains('hidden')) {
+    return parseFloat(inp.value) || null;
+  }
+  if (disp.dataset.weight) {
+    return parseFloat(disp.dataset.weight);
+  }
+  return null;
 }
-
-.ts-wrapper.focus .ts-control {
-  border-color: var(--brand) !important;
-  background: #fff !important;
+ 
+function updateTotalWeightDisplay() {
+  const cat = document.getElementById('catSelect').value;
+  if (!cat || getCatMode(cat) !== 'quantity') return;
+ 
+  const tw  = document.getElementById('totalWeightDisplay');
+  if (!tw) return;
+  const wpi = getCurrentWeightPerItem();
+  const qty = parseInt(document.getElementById('qtySelect').value) || 1;
+  if (wpi && !isNaN(wpi) && wpi > 0) {
+    tw.textContent = (wpi * qty).toFixed(3) + ' kg';
+  } else {
+    tw.textContent = '—';
+  }
 }
-
-.ts-dropdown {
-  border: 1.5px solid var(--border) !important;
-  border-radius: 8px !important;
-  box-shadow: 0 6px 24px rgba(0,0,0,0.12) !important;
-  font-family: 'Inter', sans-serif !important;
-  font-size: 14px !important;
-  margin-top: 2px !important;
+ 
+// ─────────────────────────────────────────────
+//  Add Button State
+// ─────────────────────────────────────────────
+function updateAddButton() {
+  document.getElementById('btnAdd').disabled = !canAdd();
 }
-
-.ts-dropdown .option {
-  padding: 8px 12px !important;
+ 
+function canAdd() {
+  const cat = document.getElementById('catSelect').value;
+  if (!cat || !INVENTORY[cat]) return false;
+ 
+  const itemName = tomItem ? tomItem.getValue() : '';
+  if (!itemName) return false;
+ 
+  const catData = INVENTORY[cat];
+ 
+  // Components: need component selected
+  if (catData.type === 'components') {
+    if (!document.getElementById('componentSelect').value) return false;
+  }
+ 
+  // Need a valid weight
+  const wpi = getCurrentWeightPerItem();
+  if (wpi === null || isNaN(wpi) || wpi <= 0) return false;
+ 
+  return true;
 }
-
-.ts-dropdown .option.active {
-  background: var(--brand) !important;
-  color: #fff !important;
+ 
+// ─────────────────────────────────────────────
+//  Add Item
+// ─────────────────────────────────────────────
+function onAddItem() {
+  clearAlert();
+ 
+  const cat = document.getElementById('catSelect').value;
+  if (!cat || !INVENTORY[cat]) return;
+ 
+  const itemName = tomItem ? tomItem.getValue() : '';
+  if (!itemName) return;
+ 
+  const catData = INVENTORY[cat];
+  const mode    = getCatMode(cat);
+  let displayName = itemName;
+  let isManual    = false;
+ 
+  // Handle component name suffix
+  if (catData.type === 'components') {
+    const comp = document.getElementById('componentSelect').value;
+    if (!comp) return;
+    displayName = `${itemName} - ${comp}`;
+  }
+ 
+  const weightPerItem = getCurrentWeightPerItem();
+  if (!weightPerItem || isNaN(weightPerItem) || weightPerItem <= 0) {
+    showAlert('Please enter a valid weight.', 'warn');
+    return;
+  }
+ 
+  // Determine if weight was manually entered
+  const inp = document.getElementById('weightInput');
+  isManual = !inp.classList.contains('hidden');
+ 
+  const qty         = mode === 'quantity' ? (parseInt(document.getElementById('qtySelect').value) || 1) : 1;
+  const totalWeight = parseFloat((weightPerItem * qty).toFixed(6));
+ 
+  const key = makeKey(cat, displayName);
+  if (usedKeys.has(key)) {
+    showAlert(`"${displayName}" is already in the list.`, 'warn');
+    return;
+  }
+ 
+  laundryItems.push({ key, displayName, weightPerItem, quantity: qty, totalWeight, isManual, category: cat, mode });
+  usedKeys.add(key);
+ 
+  // Reset form
+  document.getElementById('catSelect').value = '';
+  resetItemDropdown();
+  hideComponent();
+  resetWeightArea();
+  hideQuantityRow();
+  updateAddButton();
+ 
+  renderAll();
 }
-
-.ts-dropdown .option:hover:not(.active) {
-  background: #EEF2F8 !important;
+ 
+// ─────────────────────────────────────────────
+//  Remove Item
+// ─────────────────────────────────────────────
+function removeItem(key) {
+  laundryItems = laundryItems.filter(i => i.key !== key);
+  usedKeys.delete(key);
+  renderAll();
 }
-
-/* ---- Buttons ---- */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  transition: all 0.15s;
-  white-space: nowrap;
+ 
+// ─────────────────────────────────────────────
+//  Render All
+// ─────────────────────────────────────────────
+function renderAll() {
+  renderList();
+  renderTotals();
+  renderBags();
+  renderSummary();
+  broadcastToJotform();
 }
-
-.btn-primary {
-  background: var(--brand);
-  color: #fff;
+ 
+// ─────────────────────────────────────────────
+//  Render Laundry List
+// ─────────────────────────────────────────────
+function renderList() {
+  const ul    = document.getElementById('laundryList');
+  const empty = document.getElementById('listEmpty');
+  ul.innerHTML = '';
+ 
+  if (laundryItems.length === 0) { empty.style.display = ''; return; }
+  empty.style.display = 'none';
+ 
+  laundryItems.forEach(it => {
+    const li = document.createElement('li');
+    li.className = 'laundry-item';
+ 
+    let weightInfo;
+    if (it.mode === 'quantity' && it.quantity > 1) {
+      weightInfo = `
+        <span class="item-qty-badge">×${it.quantity}</span>
+        <span class="item-weight-per">${it.weightPerItem.toFixed(3)} kg/ea</span>
+        <span class="item-dots">··</span>
+        <span class="item-weight${it.isManual ? ' manual' : ''}">${it.totalWeight.toFixed(3)} kg</span>
+      `;
+    } else {
+      weightInfo = `
+        <span class="item-dots">··············</span>
+        <span class="item-weight${it.isManual ? ' manual' : ''}">${it.totalWeight.toFixed(3)} kg</span>
+      `;
+    }
+ 
+    li.innerHTML = `
+      <span class="item-name">${escHtml(it.displayName)}</span>
+      ${weightInfo}
+      <button class="btn btn-danger" onclick="removeItem(${JSON.stringify(it.key)})">✕</button>
+    `;
+    ul.appendChild(li);
+  });
 }
-
-.btn-primary:hover { background: var(--brand-dk); }
-.btn-primary:active { transform: scale(0.98); }
-
-.btn-primary:disabled {
-  background: #A0AEC0;
-  cursor: not-allowed;
-  transform: none;
+ 
+// ─────────────────────────────────────────────
+//  Render Totals
+// ─────────────────────────────────────────────
+function renderTotals() {
+  const totalW = laundryItems.reduce((s, i) => s + i.totalWeight, 0);
+  document.getElementById('totalItems').textContent  = laundryItems.length;
+  document.getElementById('totalWeight').textContent = totalW.toFixed(3) + ' kg';
 }
-
-.btn-add {
-  width: 100%;
-  margin-top: 4px;
-  padding: 12px;
-  font-size: 15px;
+ 
+// ─────────────────────────────────────────────
+//  Bag Grouping
+// ─────────────────────────────────────────────
+function onBagToggle() {
+  const on = document.getElementById('bagToggle').checked;
+  document.getElementById('bagMaxRow').style.display = on ? '' : 'none';
+  renderBags();
 }
-
-.btn-danger {
-  background: none;
-  color: var(--danger);
-  padding: 4px 8px;
-  font-size: 12px;
-  border: 1px solid transparent;
-  border-radius: 6px;
+ 
+function renderBags() {
+  const container = document.getElementById('bagsOutput');
+  if (!document.getElementById('bagToggle').checked || laundryItems.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+  const maxW = parseFloat(document.getElementById('bagMaxWeight').value) || 15;
+  const bags = groupIntoBags(laundryItems, maxW);
+ 
+  let html = '<div class="bags-grid">';
+  bags.forEach((bag, idx) => {
+    const bagW = bag.reduce((s, i) => s + i.totalWeight, 0);
+    html += `
+      <div class="bag-card">
+        <div class="bag-header">
+          <h3>Bag ${idx + 1}</h3>
+          <span class="bag-weight">${bagW.toFixed(3)} kg</span>
+        </div>
+        <div class="bag-items">
+          ${bag.map(it => {
+            const qtyStr = (it.mode === 'quantity' && it.quantity > 1) ? ` ×${it.quantity}` : '';
+            return `<div>• ${escHtml(it.displayName)}${qtyStr} <span style="color:#888">(${it.totalWeight.toFixed(3)} kg)</span></div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  });
+  html += '</div>';
+  container.innerHTML = html;
 }
-
-.btn-danger:hover {
-  background: #FFF0F0;
-  border-color: #FFCCCC;
+ 
+function groupIntoBags(items, maxW) {
+  const sorted = [...items].sort((a, b) => b.totalWeight - a.totalWeight);
+  const bags   = [];
+  sorted.forEach(item => {
+    let placed = false;
+    for (const bag of bags) {
+      const used = bag.reduce((s, i) => s + i.totalWeight, 0);
+      if (used + item.totalWeight <= maxW + 0.0001) { bag.push(item); placed = true; break; }
+    }
+    if (!placed) bags.push([item]);
+  });
+  return bags;
 }
-
-/* ---- Laundry List ---- */
-.laundry-list {
-  list-style: none;
+ 
+// ─────────────────────────────────────────────
+//  Summary Output
+// ─────────────────────────────────────────────
+function buildSummaryText() {
+  if (laundryItems.length === 0) return '— No items —';
+  const totalW = laundryItems.reduce((s, i) => s + i.totalWeight, 0);
+  let lines = [];
+  laundryItems.forEach(it => {
+    lines.push(`ITEM NAME: ${it.displayName}`);
+    if (it.mode === 'quantity' && it.quantity > 1) {
+      lines.push(`QUANTITY: ${it.quantity}`);
+      lines.push(`WEIGHT PER ITEM: ${it.weightPerItem.toFixed(3)}kg`);
+    }
+    lines.push(`WEIGHT: ${it.totalWeight.toFixed(3)}kg`);
+    lines.push('');
+  });
+  lines.push(`TOTAL ITEMS: ${laundryItems.length}`);
+  lines.push(`TOTAL WEIGHT: ${totalW.toFixed(3)}kg`);
+  return lines.join('\n');
 }
-
-.laundry-item {
-  display: flex;
-  align-items: center;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
-  gap: 8px;
+ 
+function renderSummary() {
+  const text = buildSummaryText();
+  window.latestSubmissionText = text;
+  document.getElementById('summaryOutput').textContent = text;
 }
-
-.laundry-item:last-child { border-bottom: none; }
-
-.item-name {
-  flex: 1;
-  font-weight: 500;
-  font-size: 14px;
-  word-break: break-word;
+ 
+// ─────────────────────────────────────────────
+//  Copy
+// ─────────────────────────────────────────────
+function copySummary() {
+  navigator.clipboard.writeText(window.latestSubmissionText).then(() => {
+    const btn = document.getElementById('btnCopy');
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => { btn.textContent = '📋 Copy Summary'; }, 2000);
+  }).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = window.latestSubmissionText;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  });
 }
-
-.item-dots {
-  flex: 0 1 80px;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 12px;
-  white-space: nowrap;
-  text-align: center;
-  letter-spacing: 2px;
+ 
+// ─────────────────────────────────────────────
+//  JotForm
+// ─────────────────────────────────────────────
+function setupJotform() {
+  if (typeof JFCustomWidget === 'undefined') return;
+  JFCustomWidget.subscribe('submit', function () {
+    JFCustomWidget.sendSubmit({ valid: true, value: window.latestSubmissionText });
+  });
 }
-
-.item-weight {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--brand);
-  white-space: nowrap;
-  min-width: 60px;
-  text-align: right;
+ 
+function broadcastToJotform() {
+  if (typeof JFCustomWidget === 'undefined') return;
+  try { JFCustomWidget.sendData({ value: window.latestSubmissionText }); } catch (e) {}
 }
-
-.item-weight.manual {
-  color: var(--accent);
+ 
+// ─────────────────────────────────────────────
+//  Future: Transaction Loader
+// ─────────────────────────────────────────────
+window.loadTransaction = function(txnNumber) {
+  console.log('[loadTransaction] Not yet implemented. TXN:', txnNumber);
+  showAlert(`Transaction loading not yet implemented. (${txnNumber})`, 'warn');
+};
+ 
+window.addItemProgrammatically = function(category, itemName, component, weightPerItem, quantity = 1) {
+  const displayName = component ? `${itemName} - ${component}` : itemName;
+  const key = makeKey(category, displayName);
+  if (usedKeys.has(key)) return false;
+  const mode = getCatMode(category);
+  const totalWeight = parseFloat((weightPerItem * quantity).toFixed(6));
+  laundryItems.push({ key, displayName, weightPerItem, quantity, totalWeight, isManual: false, category, mode });
+  usedKeys.add(key);
+  renderAll();
+  return true;
+};
+ 
+// ─────────────────────────────────────────────
+//  Utilities
+// ─────────────────────────────────────────────
+function makeKey(cat, name) { return `${cat}::${name}`; }
+ 
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
-
-/* ---- Totals ---- */
-.totals-row {
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
+ 
+function showAlert(msg, type = 'warn') {
+  document.getElementById('alertBox').innerHTML =
+    `<div class="alert alert-${type}">${escHtml(msg)}</div>`;
 }
-
-.total-box {
-  flex: 1;
-  min-width: 120px;
-  background: #EEF2F8;
-  border-radius: 10px;
-  padding: 14px 16px;
-  text-align: center;
-}
-
-.total-box .t-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--muted);
-  margin-bottom: 4px;
-}
-
-.total-box .t-value {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--brand);
-}
-
-/* ---- Bag Grouping ---- */
-.bag-toggle-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-  flex-wrap: wrap;
-}
-
-.toggle-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  cursor: pointer;
-  user-select: none;
-}
-
-.toggle-label input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--brand);
-  cursor: pointer;
-}
-
-.bag-max-input {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.bag-max-input input {
-  width: 70px;
-  padding: 6px 10px;
-  border: 1.5px solid var(--border);
-  border-radius: 8px;
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--brand);
-  background: #FAFBFC;
-  text-align: center;
-  outline: none;
-}
-
-.bag-max-input input:focus { border-color: var(--brand); }
-
-.bags-grid {
-  display: grid;
-  gap: 12px;
-}
-
-.bag-card {
-  background: #F7FBFF;
-  border: 1.5px solid #C8DAFA;
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.bag-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  background: var(--brand);
-  color: #fff;
-}
-
-.bag-header h3 {
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.bag-header .bag-weight {
-  font-size: 13px;
-  opacity: 0.9;
-}
-
-.bag-items {
-  padding: 10px 14px;
-  font-size: 13px;
-  color: var(--text);
-  line-height: 1.8;
-}
-
-/* ---- Summary Output ---- */
-.summary-output {
-  background: #1A202C;
-  color: #A0F0B0;
-  font-family: 'Courier New', monospace;
-  font-size: 13px;
-  border-radius: 10px;
-  padding: 16px;
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 300px;
-  overflow-y: auto;
-  line-height: 1.7;
-}
-
-.copy-btn {
-  margin-top: 10px;
-}
-
-/* ---- Empty State ---- */
-.empty-state {
-  text-align: center;
-  padding: 32px 16px;
-  color: var(--muted);
-}
-
-.empty-state .empty-icon {
-  font-size: 36px;
-  margin-bottom: 10px;
-}
-
-.empty-state p {
-  font-size: 14px;
-}
-
-/* ---- Hidden ---- */
-.hidden { display: none !important; }
-
-/* ---- Alerts ---- */
-.alert {
-  padding: 10px 14px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  margin-bottom: 12px;
-}
-
-.alert-warn {
-  background: #FFF8E1;
-  color: #92650D;
-  border: 1px solid #FFE082;
-}
-
-.alert-error {
-  background: #FFF0F0;
-  color: #B33A3A;
-  border: 1px solid #FFCCCC;
-}
-
-/* ---- Transaction Search (future) ---- */
-.txn-search-row {
-  display: flex;
-  gap: 10px;
-  align-items: flex-end;
-}
-
-.txn-search-row .form-group { flex: 1; }
-
-/* ---- Footer ---- */
-.app-footer {
-  text-align: center;
-  font-size: 12px;
-  color: var(--muted);
-  margin-top: 20px;
-}
+ 
+function clearAlert() { document.getElementById('alertBox').innerHTML = ''; }
+ 
