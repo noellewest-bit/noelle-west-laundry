@@ -478,11 +478,17 @@ function renderTotals() {
 // ─────────────────────────────────────────────
 
 // bags[i] = { entries: [ { key, qty } ] }
-// key = laundryItem.key, qty = how many units going in this bag (for quantity-mode items)
 let bags = [];
 
 function initBagSection() {
-  document.getElementById('btnAddBag').addEventListener('click', addNewBag);
+  // Use onclick on the element directly — survives any DOM changes elsewhere
+  document.getElementById('btnAddBag').onclick = function() {
+    if (laundryItems.length === 0) return;
+    bags.push({ entries: [] });
+    renderAllBags();
+    renderSummary();
+    broadcastToJotform();
+  };
 }
 
 /** Called after laundryItems changes */
@@ -491,19 +497,16 @@ function refreshBagUI() {
   document.getElementById('bagEmpty').style.display  = hasList ? 'none' : '';
   document.getElementById('btnAddBag').style.display = hasList ? '' : 'none';
 
-  // Remove entries whose keys no longer exist
+  // Remove entries whose keys no longer exist in laundryItems
   bags.forEach(bag => {
     bag.entries = bag.entries.filter(e => laundryItems.some(i => i.key === e.key));
   });
 
-  // Auto-create Bag 1
-  if (hasList && bags.length === 0) addNewBag();
-  else renderAllBags();
-}
+  // Auto-create Bag 1 only if there are no bags yet
+  if (hasList && bags.length === 0) {
+    bags.push({ entries: [] });
+  }
 
-function addNewBag() {
-  if (laundryItems.length === 0) return;
-  bags.push({ entries: [] });
   renderAllBags();
 }
 
