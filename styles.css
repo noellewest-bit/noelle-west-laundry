@@ -369,7 +369,60 @@ body {
 .bag-delete-btn:hover { opacity: 1; }
 
 .bag-item-picker {
-  padding: 0 14px;
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid #E8F0FD;
+}
+
+.picker-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 6px;
+}
+
+.bag-item-picker select {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+  background: #FAFBFC;
+  outline: none;
+  /* Make it a listbox so user can scroll */
+  size: 5;
+  height: auto;
+  overflow-y: auto;
+}
+
+.bag-item-picker select:focus {
+  border-color: var(--brand);
+  background: #fff;
+}
+
+.bag-qty-row {
+  margin-top: 8px;
+}
+
+.bag-qty-row select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+  background: #FAFBFC;
+  outline: none;
+}
+
+.bag-item-name {
+  flex: 1;
+  word-break: break-word;
 }
 
 .bag-items {
