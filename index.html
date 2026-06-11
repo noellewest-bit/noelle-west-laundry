@@ -4,11 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Noelle West Laundry Calculator</title>
-
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.css" />
   <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
   <script src="https://js.jotform.com/JotFormCustomWidget.min.js"></script>
-
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -20,72 +18,47 @@
   </div>
 
   <!-- ── Item Selector Card ── -->
-  <div class="card" id="selectorCard">
+  <div class="card">
     <div class="card-title">➕ Add Item to Laundry List</div>
     <div id="alertBox"></div>
 
-    <!-- Row 1: Category + Item -->
     <div class="form-row cols-2">
       <div class="form-group">
         <label for="catSelect">Category</label>
-        <select id="catSelect">
-          <option value="">— Select —</option>
-        </select>
+        <select id="catSelect"><option value="">— Select —</option></select>
       </div>
       <div class="form-group">
         <label for="itemSelect">Item</label>
-        <select id="itemSelect">
-          <option value="">— Select category first —</option>
-        </select>
+        <select id="itemSelect"><option value="">— Select category first —</option></select>
       </div>
     </div>
 
-    <!-- Row 2: Component (KGS categories only) -->
     <div class="form-group" id="componentGroup" style="display:none; margin-bottom:12px;">
       <label for="componentSelect">Component</label>
-      <select id="componentSelect">
-        <option value="">— Select component —</option>
-      </select>
+      <select id="componentSelect"><option value="">— Select component —</option></select>
     </div>
 
-    <!-- Row 3: Weight Per Item -->
     <div class="form-group" style="margin-bottom:12px;">
       <label for="weightInput" id="weightLabel">Weight</label>
       <div id="weightDisplay" class="weight-display empty">
-        <span class="weight-val">—</span>
-        <span class="weight-unit">kg</span>
+        <span class="weight-val">—</span><span class="weight-unit">kg</span>
       </div>
-      <input type="number" id="weightInput" style="display:none;" min="0" step="0.01" placeholder="Enter kg (e.g. 0.30)" />
+      <input type="number" id="weightInput" style="display:none;" min="0" step="0.01" placeholder="Enter kg" />
     </div>
 
-    <!-- Row 4: Quantity — only shown for QUANTITY_CATS -->
     <div class="form-group" id="quantityRow" style="display:none; margin-bottom:12px;">
       <label for="qtySelect">Quantity</label>
       <select id="qtySelect">
-        <option value="1">1</option>
-        <option value="2">2</option>
-        <option value="3">3</option>
-        <option value="4">4</option>
-        <option value="5">5</option>
-        <option value="6">6</option>
-        <option value="7">7</option>
-        <option value="8">8</option>
-        <option value="9">9</option>
-        <option value="10">10</option>
-        <option value="11">11</option>
-        <option value="12">12</option>
-        <option value="13">13</option>
-        <option value="14">14</option>
-        <option value="15">15</option>
-        <option value="16">16</option>
-        <option value="17">17</option>
-        <option value="18">18</option>
-        <option value="19">19</option>
-        <option value="20">20</option>
+        <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+        <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+        <option value="7">7</option><option value="8">8</option><option value="9">9</option>
+        <option value="10">10</option><option value="11">11</option><option value="12">12</option>
+        <option value="13">13</option><option value="14">14</option><option value="15">15</option>
+        <option value="16">16</option><option value="17">17</option><option value="18">18</option>
+        <option value="19">19</option><option value="20">20</option>
       </select>
     </div>
 
-    <!-- Row 5: Total Weight — only shown for QUANTITY_CATS -->
     <div class="form-group" id="totalWeightRow" style="display:none; margin-bottom:12px;">
       <label>Total Weight</label>
       <div class="weight-display total-weight-display">
@@ -122,25 +95,26 @@
   </div>
 
   <!-- ── Bag Grouping Card ── -->
-  <div class="card" id="bagCard">
+  <div class="card">
     <div class="card-title">🛄 Bag Grouping</div>
 
     <div id="bagEmpty" class="empty-state" style="padding:16px 0 8px;">
       <p style="font-size:13px;">Add items to the laundry list first, then group them into bags.</p>
     </div>
 
-    <div id="bagSetup" style="display:none;">
-      <div class="form-group" style="margin-bottom:12px;">
+    <div id="bagSetup" style="display:none; margin-bottom:16px;">
+      <div class="form-group">
         <label for="numBagsInput">How many bags?</label>
-        <div style="display:flex;gap:10px;align-items:center;">
+        <div style="display:flex; gap:10px; align-items:center; margin-top:6px;">
           <input type="number" id="numBagsInput" min="1" max="20" value="1"
-            style="width:90px;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:16px;font-weight:700;color:var(--brand);text-align:center;font-family:inherit;outline:none;" />
+            style="width:80px; padding:9px 12px; border:1.5px solid var(--border); border-radius:8px;
+                   font-size:16px; font-weight:700; color:var(--brand); text-align:center;
+                   font-family:inherit; outline:none;" />
           <button class="btn btn-primary" onclick="onSetBags()">Set Bags</button>
         </div>
       </div>
     </div>
 
-    <!-- Bags rendered here -->
     <div id="bagsOutput"></div>
   </div>
 
@@ -152,7 +126,6 @@
 
   <div class="app-footer">Noelle West Laundry Calculator • Powered by NW Inventory</div>
 </div>
-
 <script src="app.js"></script>
 </body>
 </html>
