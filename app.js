@@ -37,6 +37,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadInventory();
   buildCategoryDropdown();
   bindEvents();
+  initBagSection();
   setupJotform();
   renderAll();
 });
@@ -408,6 +409,8 @@ function onAddItem() {
 function removeItem(key) {
   laundryItems = laundryItems.filter(i => i.key !== key);
   usedKeys.delete(key);
+  // Also remove from any bags that contain this item
+  bags.forEach(bag => bag.items.delete(key));
   renderAll();
 }
 
@@ -417,7 +420,7 @@ function removeItem(key) {
 function renderAll() {
   renderList();
   renderTotals();
-  renderBags();
+  refreshBagUI();
   renderSummary();
   broadcastToJotform();
 }
@@ -471,100 +474,138 @@ function renderTotals() {
 }
 
 // ─────────────────────────────────────────────
-//  Bag Grouping — splits quantity items across bags
+//  Manual Bag Builder
 // ─────────────────────────────────────────────
-function onBagToggle() {
-  const on = document.getElementById('bagToggle').checked;
-  document.getElementById('bagMaxRow').style.display = on ? '' : 'none';
-  renderBags();
+
+let bags = []; // each bag: { items: Set of laundryItem keys, tomSelect: instance }
+
+function initBagSection() {
+  const btnAddBag = document.getElementById('btnAddBag');
+  btnAddBag.addEventListener('click', addNewBag);
+  refreshBagUI();
 }
 
-function renderBags() {
-  const container = document.getElementById('bagsOutput');
-  if (!document.getElementById('bagToggle').checked || laundryItems.length === 0) {
-    container.innerHTML = '';
-    return;
-  }
-  const maxW = parseFloat(document.getElementById('bagMaxWeight').value) || 15;
-  const bags = groupIntoBags(laundryItems, maxW);
+/** Called whenever laundryItems changes — refreshes visibility + all bag dropdowns */
+function refreshBagUI() {
+  const hasList = laundryItems.length > 0;
+  document.getElementById('bagEmpty').style.display  = hasList ? 'none' : '';
+  document.getElementById('btnAddBag').style.display = hasList ? '' : 'none';
 
+  // If there are bags, auto-start Bag 1
+  if (hasList && bags.length === 0) addNewBag();
+
+  // Rebuild every bag's dropdown to reflect current laundryItems
+  bags.forEach((bag, idx) => rebuildBagDropdown(idx));
+
+  renderBagsHTML();
+}
+
+function addNewBag() {
+  if (laundryItems.length === 0) return;
+  bags.push({ items: new Set() });
+  renderBagsHTML();
+  // Rebuild last bag's dropdown
+  rebuildBagDropdown(bags.length - 1);
+}
+
+function removeBag(idx) {
+  if (bags[idx] && bags[idx].tomSelect) bags[idx].tomSelect.destroy();
+  bags.splice(idx, 1);
+  renderBagsHTML();
+  bags.forEach((_, i) => rebuildBagDropdown(i));
+  renderAll();
+}
+
+function renderBagsHTML() {
+  const container = document.getElementById('bagsOutput');
   if (bags.length === 0) { container.innerHTML = ''; return; }
 
-  let html = '<div class="bags-grid">';
+  let html = '<div class="bags-grid" id="bagsGrid">';
   bags.forEach((bag, idx) => {
-    const bagW = bag.reduce((s, i) => s + i.sliceWeight, 0);
+    const bagW = getBagWeight(bag);
+    const bagItemsHTML = bag.items.size === 0
+      ? '<div class="bag-no-items">No items selected yet.</div>'
+      : [...bag.items].map(key => {
+          const it = laundryItems.find(i => i.key === key);
+          if (!it) return '';
+          const qStr = it.mode === 'quantity' && it.quantity > 1 ? ` ×${it.quantity}` : '';
+          return `<div class="bag-item-row">
+            • ${escHtml(it.displayName)}${qStr}
+            <span class="bag-item-wt">${it.totalWeight.toFixed(3)} kg</span>
+            <button class="bag-item-remove" onclick="removeBagItem(${idx}, ${JSON.stringify(key)})">✕</button>
+          </div>`;
+        }).join('');
+
     html += `
-      <div class="bag-card">
+      <div class="bag-card" id="bagCard_${idx}">
         <div class="bag-header">
           <h3>Bag ${idx + 1}</h3>
           <span class="bag-weight">${bagW.toFixed(3)} kg</span>
+          <button class="bag-delete-btn" onclick="removeBag(${idx})">🗑</button>
         </div>
-        <div class="bag-items">
-          ${bag.map(slice => {
-            const qtyStr = slice.sliceQty > 1 ? ` ×${slice.sliceQty}` : '';
-            return `<div>• ${escHtml(slice.displayName)}${qtyStr} <span style="color:#888">(${slice.sliceWeight.toFixed(3)} kg)</span></div>`;
-          }).join('')}
+        <div class="bag-item-picker" style="margin:12px 0 8px;">
+          <label style="font-size:12px;font-weight:600;color:#718096;text-transform:uppercase;letter-spacing:.4px;">Add Item to Bag</label>
+          <select id="bagSelect_${idx}" placeholder="Select item…"></select>
         </div>
+        <div class="bag-items">${bagItemsHTML}</div>
+        ${bagW > 0 ? `<div class="bag-total-row">Total: <strong>${bagW.toFixed(3)} kg</strong></div>` : ''}
       </div>`;
   });
   html += '</div>';
   container.innerHTML = html;
+
+  // Re-init Tom Select for each bag after DOM rebuild
+  bags.forEach((_, idx) => rebuildBagDropdown(idx));
 }
 
-/**
- * Groups items into bags strictly under maxW.
- * Quantity items (mode==='quantity') are split unit-by-unit so no bag exceeds maxW.
- * Returns array of bags; each bag is array of slices: { displayName, sliceQty, sliceWeight }
- */
-function groupIntoBags(items, maxW) {
-  // Expand every item into individual units
-  const units = [];
-  items.forEach(it => {
-    const unitW = it.weightPerItem;
-    if (unitW > maxW) {
-      // Single unit exceeds max — goes in its own bag, can't be split further
-      units.push({ displayName: it.displayName, unitWeight: unitW, _over: true });
-    } else {
-      const count = it.mode === 'quantity' ? it.quantity : 1;
-      for (let i = 0; i < count; i++) {
-        units.push({ displayName: it.displayName, unitWeight: unitW });
-      }
+function rebuildBagDropdown(idx) {
+  const sel = document.getElementById(`bagSelect_${idx}`);
+  if (!sel) return;
+
+  // Destroy existing Tom Select
+  if (bags[idx].tomSelect) { bags[idx].tomSelect.destroy(); bags[idx].tomSelect = null; }
+
+  // Build options: items not already in THIS bag
+  sel.innerHTML = '<option value=""></option>';
+  laundryItems.forEach(it => {
+    if (!bags[idx].items.has(it.key)) {
+      const opt = document.createElement('option');
+      opt.value = it.key;
+      const qStr = it.mode === 'quantity' && it.quantity > 1 ? ` ×${it.quantity}` : '';
+      opt.textContent = `${it.displayName}${qStr} (${it.totalWeight.toFixed(3)} kg)`;
+      sel.appendChild(opt);
     }
   });
 
-  // Sort heaviest first (first-fit decreasing)
-  units.sort((a, b) => b.unitWeight - a.unitWeight);
-
-  // Pack into bags
-  const bagWeights = []; // running weight per bag
-  const bagSlices  = []; // array of maps: displayName -> { displayName, sliceQty, sliceWeight }
-
-  units.forEach(unit => {
-    let placed = false;
-    for (let b = 0; b < bagWeights.length; b++) {
-      if (bagWeights[b] + unit.unitWeight <= maxW + 0.0001) {
-        bagWeights[b] += unit.unitWeight;
-        const map = bagSlices[b];
-        if (map[unit.displayName]) {
-          map[unit.displayName].sliceQty   += 1;
-          map[unit.displayName].sliceWeight = parseFloat((map[unit.displayName].sliceWeight + unit.unitWeight).toFixed(6));
-        } else {
-          map[unit.displayName] = { displayName: unit.displayName, sliceQty: 1, sliceWeight: unit.unitWeight };
-        }
-        placed = true;
-        break;
-      }
-    }
-    if (!placed) {
-      bagWeights.push(unit.unitWeight);
-      const map = {};
-      map[unit.displayName] = { displayName: unit.displayName, sliceQty: 1, sliceWeight: unit.unitWeight };
-      bagSlices.push(map);
+  bags[idx].tomSelect = new TomSelect(`#bagSelect_${idx}`, {
+    placeholder: 'Search & select item…',
+    maxOptions: 300,
+    onChange(key) {
+      if (!key) return;
+      bags[idx].items.add(key);
+      bags[idx].tomSelect.clear(true);
+      renderBagsHTML();
+      bags.forEach((_, i) => rebuildBagDropdown(i));
+      renderAll();
     }
   });
+}
 
-  // Convert maps to arrays
-  return bagSlices.map(map => Object.values(map));
+function removeBagItem(bagIdx, key) {
+  if (!bags[bagIdx]) return;
+  bags[bagIdx].items.delete(key);
+  renderBagsHTML();
+  bags.forEach((_, i) => rebuildBagDropdown(i));
+  renderAll();
+}
+
+function getBagWeight(bag) {
+  let w = 0;
+  bag.items.forEach(key => {
+    const it = laundryItems.find(i => i.key === key);
+    if (it) w += it.totalWeight;
+  });
+  return w;
 }
 
 // ─────────────────────────────────────────────
@@ -575,16 +616,20 @@ function buildSummaryText() {
   const totalW = laundryItems.reduce((s, i) => s + i.totalWeight, 0);
   let lines = [];
 
-  const bagOn = document.getElementById('bagToggle').checked;
-  if (bagOn) {
-    const maxW = parseFloat(document.getElementById('bagMaxWeight').value) || 15;
-    const bags = groupIntoBags(laundryItems, maxW);
+  if (bags.length > 0 && bags.some(b => b.items.size > 0)) {
     bags.forEach((bag, idx) => {
-      const bagW = bag.reduce((s, sl) => s + sl.sliceWeight, 0);
+      if (bag.items.size === 0) return;
+      const bagW = getBagWeight(bag);
       lines.push(`--- BAG ${idx + 1} (${bagW.toFixed(3)}kg) ---`);
-      bag.forEach(sl => {
-        lines.push(`ITEM NAME: ${sl.displayName}${sl.sliceQty > 1 ? ` ×${sl.sliceQty}` : ''}`);
-        lines.push(`WEIGHT: ${sl.sliceWeight.toFixed(3)}kg`);
+      bag.items.forEach(key => {
+        const it = laundryItems.find(i => i.key === key);
+        if (!it) return;
+        lines.push(`ITEM NAME: ${it.displayName}`);
+        if (it.mode === 'quantity' && it.quantity > 1) {
+          lines.push(`QUANTITY: ${it.quantity}`);
+          lines.push(`WEIGHT PER ITEM: ${it.weightPerItem.toFixed(3)}kg`);
+        }
+        lines.push(`WEIGHT: ${it.totalWeight.toFixed(3)}kg`);
         lines.push('');
       });
     });
