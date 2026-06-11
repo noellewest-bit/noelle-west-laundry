@@ -1,19 +1,32 @@
 /**
- * Noelle West Laundry Calculator
- * app.js — vanilla JS, no frameworks
- *
- * Structure allows future loadTransaction(txnNumber) hook:
- *   window.loadTransaction = async (txnNumber) => { ... }
+ * Noelle West Laundry Calculator — app.js
+ * Weight-only categories: BGI, BGS, PGI, PGS, PGC, FIL, MG, CD, MS, CS, PET, S-UPPER
+ * Quantity categories:    BCPO, BOY, BPSC, BPO, BPOL, BPS, COAT BARONG, BCC, BPOC, VST, POLO, ACC, PEN, PANTS
  */
+
+// ─────────────────────────────────────────────
+//  Category mode config
+// ─────────────────────────────────────────────
+const WEIGHT_ONLY_CATS = new Set([
+  'BGI','BGS','PGI','PGS','PGC','FIL','MG','CD','MS','CS','PET','S-UPPER'
+]);
+const QUANTITY_CATS = new Set([
+  'BCPO','BOY','BPSC','BPO','BPOL','BPS','COAT BARONG','BCC','BPOC','VST','POLO','ACC','PEN','PANTS'
+]);
+
+function getCatMode(cat) {
+  if (WEIGHT_ONLY_CATS.has(cat)) return 'weight-only';
+  if (QUANTITY_CATS.has(cat))    return 'quantity';
+  return 'weight-only'; // fallback
+}
 
 // ─────────────────────────────────────────────
 //  State
 // ─────────────────────────────────────────────
-let INVENTORY = {};           // master-items.json contents
-let laundryItems = [];        // { key, displayName, weight, isManual }
-let usedKeys = new Set();     // prevent duplicates
-
-let tomItem = null;           // Tom Select instance for item dropdown
+let INVENTORY = {};
+let laundryItems = [];   // { key, displayName, weightPerItem, quantity, totalWeight, isManual, category }
+let usedKeys   = new Set();
+let tomItem    = null;
 
 window.latestSubmissionText = '';
 
@@ -29,7 +42,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // ─────────────────────────────────────────────
-//  Load Inventory JSON
+//  Load Inventory
 // ─────────────────────────────────────────────
 async function loadInventory() {
   try {
@@ -56,27 +69,17 @@ function buildCategoryDropdown() {
 }
 
 // ─────────────────────────────────────────────
-//  Bind UI Events
+//  Bind Events
 // ─────────────────────────────────────────────
 function bindEvents() {
   document.getElementById('catSelect').addEventListener('change', onCategoryChange);
   document.getElementById('componentSelect').addEventListener('change', onComponentChange);
-  document.getElementById('weightInput').addEventListener('input', updateAddButton);
+  document.getElementById('weightInput').addEventListener('input', onWeightInput);
+  document.getElementById('qtySelect').addEventListener('change', onQtyChange);
   document.getElementById('btnAdd').addEventListener('click', onAddItem);
   document.getElementById('bagToggle').addEventListener('change', onBagToggle);
   document.getElementById('bagMaxWeight').addEventListener('input', renderBags);
   document.getElementById('btnCopy').addEventListener('click', copySummary);
-
-  // Future: Transaction search
-  const btnLoadTxn = document.getElementById('btnLoadTxn');
-  if (btnLoadTxn) {
-    btnLoadTxn.addEventListener('click', () => {
-      const txn = document.getElementById('txnInput').value.trim();
-      if (txn && typeof window.loadTransaction === 'function') {
-        window.loadTransaction(txn);
-      }
-    });
-  }
 }
 
 // ─────────────────────────────────────────────
@@ -87,15 +90,18 @@ function onCategoryChange() {
   clearAlert();
   resetItemDropdown();
   hideComponent();
-  resetWeight();
+  resetWeightArea();
+  hideQuantityRow();
   updateAddButton();
 
   if (!cat || !INVENTORY[cat]) return;
 
-  const catData = INVENTORY[cat];
+  const catData  = INVENTORY[cat];
   const available = catData.items.filter(it => !usedKeys.has(makeKey(cat, it.name)));
-
   buildItemDropdown(cat, available);
+
+  // Show quantity row immediately if this is a quantity category
+  if (getCatMode(cat) === 'quantity') showQuantityRow();
 }
 
 // ─────────────────────────────────────────────
@@ -109,17 +115,14 @@ function resetItemDropdown() {
 
 function buildItemDropdown(cat, items) {
   if (tomItem) { tomItem.destroy(); tomItem = null; }
-
   const sel = document.getElementById('itemSelect');
   sel.innerHTML = '<option value=""></option>';
-
   items.forEach(it => {
     const opt = document.createElement('option');
     opt.value = it.name;
     opt.textContent = it.name;
     sel.appendChild(opt);
   });
-
   tomItem = new TomSelect('#itemSelect', {
     placeholder: 'Search item…',
     maxOptions: 200,
@@ -133,31 +136,31 @@ function buildItemDropdown(cat, items) {
 // ─────────────────────────────────────────────
 function onItemChange(cat, itemName) {
   hideComponent();
-  resetWeight();
+  resetWeightArea();
   updateAddButton();
-
   if (!itemName || !INVENTORY[cat]) return;
 
   const catData = INVENTORY[cat];
-  const item = catData.items.find(i => i.name === itemName);
+  const item    = catData.items.find(i => i.name === itemName);
   if (!item) return;
 
-  if (catData.type === 'auto') {
-    // Auto-populate weight
-    if (item.weight !== null && item.weight !== undefined) {
-      setWeightDisplay(item.weight);
-    } else {
-      setWeightDisplay(null); // no weight on record
-    }
-    updateAddButton();
+  const mode = getCatMode(cat);
 
-  } else if (catData.type === 'components') {
+  if (catData.type === 'components') {
     showComponentDropdown(catData.components, item);
-
+  } else if (catData.type === 'auto') {
+    if (item.weight !== null && item.weight !== undefined) {
+      setWeightDisplay(item.weight, mode);
+    } else {
+      showManualWeightInput(mode);
+    }
   } else {
-    // Manual
-    showManualWeight();
+    // manual
+    showManualWeightInput(mode);
   }
+
+  updateTotalWeightDisplay();
+  updateAddButton();
 }
 
 // ─────────────────────────────────────────────
@@ -165,7 +168,7 @@ function onItemChange(cat, itemName) {
 // ─────────────────────────────────────────────
 function showComponentDropdown(componentNames, item) {
   const grp = document.getElementById('componentGroup');
-  const sel = document.getElementById('componentSelect');
+  const sel  = document.getElementById('componentSelect');
   sel.innerHTML = '<option value="">— Select component —</option>';
   componentNames.forEach(c => {
     const opt = document.createElement('option');
@@ -184,66 +187,142 @@ function hideComponent() {
 }
 
 function onComponentChange() {
-  const cat = document.getElementById('catSelect').value;
+  const cat      = document.getElementById('catSelect').value;
   const itemName = tomItem ? tomItem.getValue() : '';
-  const comp = document.getElementById('componentSelect').value;
+  const comp     = document.getElementById('componentSelect').value;
+  resetWeightArea();
+  if (!comp || !itemName || !INVENTORY[cat]) { updateAddButton(); return; }
 
-  if (!comp || !itemName || !INVENTORY[cat]) { resetWeight(); updateAddButton(); return; }
   const item = INVENTORY[cat].items.find(i => i.name === itemName);
   if (!item) return;
-
+  const mode = getCatMode(cat);
   const w = item.components[comp];
   if (w !== null && w !== undefined) {
-    setWeightDisplay(w);
+    setWeightDisplay(w, mode);
   } else {
-    setWeightDisplay(null);
+    showManualWeightInput(mode);
   }
+  updateTotalWeightDisplay();
   updateAddButton();
 }
 
 // ─────────────────────────────────────────────
-//  Weight Display / Input
+//  Weight Area — shared helpers
 // ─────────────────────────────────────────────
-function setWeightDisplay(val) {
-  const disp = document.getElementById('weightDisplay');
-  const inp = document.getElementById('weightInput');
 
-  if (val !== null && val !== undefined) {
-    disp.classList.remove('empty');
-    disp.innerHTML = `<span class="weight-val">${parseFloat(val).toFixed(3)}</span><span class="weight-unit">kg</span>`;
-    disp.classList.remove('hidden');
-    inp.classList.add('hidden');
-  } else {
-    // No weight on record — show manual input
-    showManualWeight();
-  }
+/**
+ * Show the read-only weight display chip.
+ * mode: 'weight-only' | 'quantity'
+ */
+function setWeightDisplay(val, mode) {
+  const disp  = document.getElementById('weightDisplay');
+  const inp   = document.getElementById('weightInput');
+  const label = document.getElementById('weightLabel');
+
+  label.textContent = mode === 'quantity' ? 'Weight Per Item' : 'Weight';
+
+  disp.classList.remove('empty', 'hidden');
+  disp.innerHTML = `<span class="weight-val">${parseFloat(val).toFixed(3)}</span><span class="weight-unit">kg</span>`;
+  inp.classList.add('hidden');
+  inp.value = '';
+
+  // Store on the display element for easy retrieval
+  disp.dataset.weight = val;
 }
 
-function showManualWeight() {
-  const disp = document.getElementById('weightDisplay');
-  const inp = document.getElementById('weightInput');
+function showManualWeightInput(mode) {
+  const disp  = document.getElementById('weightDisplay');
+  const inp   = document.getElementById('weightInput');
+  const label = document.getElementById('weightLabel');
+
+  label.textContent = mode === 'quantity' ? 'Weight Per Item' : 'Weight';
+
   disp.classList.add('hidden');
+  delete disp.dataset.weight;
   inp.classList.remove('hidden');
   inp.value = '';
+  inp.placeholder = mode === 'quantity' ? 'Weight per item (kg)' : 'Enter kg (e.g. 0.30)';
   inp.focus();
 }
 
-function resetWeight() {
-  const disp = document.getElementById('weightDisplay');
-  const inp = document.getElementById('weightInput');
+function resetWeightArea() {
+  const disp  = document.getElementById('weightDisplay');
+  const inp   = document.getElementById('weightInput');
+  const label = document.getElementById('weightLabel');
+
+  label.textContent = 'Weight';
   disp.classList.add('empty');
-  disp.innerHTML = '<span class="weight-val">—</span><span class="weight-unit">kg</span>';
   disp.classList.remove('hidden');
+  disp.innerHTML = '<span class="weight-val">—</span><span class="weight-unit">kg</span>';
+  delete disp.dataset.weight;
   inp.classList.add('hidden');
   inp.value = '';
+
+  // Also clear total weight display
+  const tw = document.getElementById('totalWeightDisplay');
+  if (tw) tw.textContent = '—';
+}
+
+// ─────────────────────────────────────────────
+//  Quantity Row
+// ─────────────────────────────────────────────
+function showQuantityRow() {
+  document.getElementById('quantityRow').classList.remove('hidden');
+  document.getElementById('totalWeightRow').classList.remove('hidden');
+  document.getElementById('qtySelect').value = '1';
+}
+
+function hideQuantityRow() {
+  document.getElementById('quantityRow').classList.add('hidden');
+  document.getElementById('totalWeightRow').classList.add('hidden');
+  document.getElementById('qtySelect').value = '1';
+  const tw = document.getElementById('totalWeightDisplay');
+  if (tw) tw.textContent = '—';
+}
+
+function onQtyChange() {
+  updateTotalWeightDisplay();
+  updateAddButton();
+}
+
+function onWeightInput() {
+  updateTotalWeightDisplay();
+  updateAddButton();
+}
+
+/** Reads current weight-per-item value from display or input */
+function getCurrentWeightPerItem() {
+  const disp = document.getElementById('weightDisplay');
+  const inp  = document.getElementById('weightInput');
+  if (!inp.classList.contains('hidden')) {
+    return parseFloat(inp.value) || null;
+  }
+  if (disp.dataset.weight) {
+    return parseFloat(disp.dataset.weight);
+  }
+  return null;
+}
+
+function updateTotalWeightDisplay() {
+  const cat = document.getElementById('catSelect').value;
+  if (!cat || getCatMode(cat) !== 'quantity') return;
+
+  const tw  = document.getElementById('totalWeightDisplay');
+  if (!tw) return;
+  const wpi = getCurrentWeightPerItem();
+  const qty = parseInt(document.getElementById('qtySelect').value) || 1;
+  if (wpi && !isNaN(wpi) && wpi > 0) {
+    tw.textContent = (wpi * qty).toFixed(3) + ' kg';
+  } else {
+    tw.textContent = '—';
+  }
 }
 
 // ─────────────────────────────────────────────
 //  Add Button State
 // ─────────────────────────────────────────────
 function updateAddButton() {
-  const btn = document.getElementById('btnAdd');
-  btn.disabled = !canAdd();
+  document.getElementById('btnAdd').disabled = !canAdd();
 }
 
 function canAdd() {
@@ -255,31 +334,16 @@ function canAdd() {
 
   const catData = INVENTORY[cat];
 
+  // Components: need component selected
   if (catData.type === 'components') {
-    const comp = document.getElementById('componentSelect').value;
-    if (!comp) return false;
-    // weight may be null — still allow (will need manual entry)
-    const item = catData.items.find(i => i.name === itemName);
-    const w = item && item.components[comp];
-    const manual = document.getElementById('weightInput');
-    if ((w === null || w === undefined) && (!manual.value || parseFloat(manual.value) <= 0)) return false;
-    return true;
+    if (!document.getElementById('componentSelect').value) return false;
   }
 
-  if (catData.type === 'manual') {
-    const manual = document.getElementById('weightInput');
-    return manual.value && parseFloat(manual.value) > 0;
-  }
+  // Need a valid weight
+  const wpi = getCurrentWeightPerItem();
+  if (wpi === null || isNaN(wpi) || wpi <= 0) return false;
 
-  // auto — weight may be null
-  const inp = document.getElementById('weightInput');
-  const disp = document.getElementById('weightDisplay');
-  if (!inp.classList.contains('hidden')) {
-    return inp.value && parseFloat(inp.value) > 0;
-  }
-  // weight display shown — only if has value
-  const wval = disp.querySelector('.weight-val');
-  return wval && wval.textContent !== '—';
+  return true;
 }
 
 // ─────────────────────────────────────────────
@@ -295,46 +359,29 @@ function onAddItem() {
   if (!itemName) return;
 
   const catData = INVENTORY[cat];
+  const mode    = getCatMode(cat);
   let displayName = itemName;
-  let weight = null;
-  let isManual = false;
+  let isManual    = false;
 
+  // Handle component name suffix
   if (catData.type === 'components') {
     const comp = document.getElementById('componentSelect').value;
     if (!comp) return;
     displayName = `${itemName} - ${comp}`;
-    const item = catData.items.find(i => i.name === itemName);
-    const w = item && item.components[comp];
-    if (w !== null && w !== undefined) {
-      weight = parseFloat(w);
-    } else {
-      const inp = document.getElementById('weightInput');
-      weight = parseFloat(inp.value);
-      isManual = true;
-    }
-
-  } else if (catData.type === 'manual') {
-    const inp = document.getElementById('weightInput');
-    weight = parseFloat(inp.value);
-    isManual = true;
-
-  } else {
-    // auto
-    const inp = document.getElementById('weightInput');
-    if (!inp.classList.contains('hidden')) {
-      weight = parseFloat(inp.value);
-      isManual = true;
-    } else {
-      const disp = document.getElementById('weightDisplay');
-      const wval = disp.querySelector('.weight-val');
-      weight = wval ? parseFloat(wval.textContent) : null;
-    }
   }
 
-  if (weight === null || isNaN(weight) || weight < 0) {
+  const weightPerItem = getCurrentWeightPerItem();
+  if (!weightPerItem || isNaN(weightPerItem) || weightPerItem <= 0) {
     showAlert('Please enter a valid weight.', 'warn');
     return;
   }
+
+  // Determine if weight was manually entered
+  const inp = document.getElementById('weightInput');
+  isManual = !inp.classList.contains('hidden');
+
+  const qty         = mode === 'quantity' ? (parseInt(document.getElementById('qtySelect').value) || 1) : 1;
+  const totalWeight = parseFloat((weightPerItem * qty).toFixed(6));
 
   const key = makeKey(cat, displayName);
   if (usedKeys.has(key)) {
@@ -342,14 +389,15 @@ function onAddItem() {
     return;
   }
 
-  laundryItems.push({ key, displayName, weight, isManual, category: cat });
+  laundryItems.push({ key, displayName, weightPerItem, quantity: qty, totalWeight, isManual, category: cat, mode });
   usedKeys.add(key);
 
   // Reset form
   document.getElementById('catSelect').value = '';
   resetItemDropdown();
   hideComponent();
-  resetWeight();
+  resetWeightArea();
+  hideQuantityRow();
   updateAddButton();
 
   renderAll();
@@ -379,23 +427,35 @@ function renderAll() {
 //  Render Laundry List
 // ─────────────────────────────────────────────
 function renderList() {
-  const ul = document.getElementById('laundryList');
+  const ul    = document.getElementById('laundryList');
   const empty = document.getElementById('listEmpty');
   ul.innerHTML = '';
 
-  if (laundryItems.length === 0) {
-    empty.style.display = '';
-    return;
-  }
+  if (laundryItems.length === 0) { empty.style.display = ''; return; }
   empty.style.display = 'none';
 
   laundryItems.forEach(it => {
     const li = document.createElement('li');
     li.className = 'laundry-item';
+
+    let weightInfo;
+    if (it.mode === 'quantity' && it.quantity > 1) {
+      weightInfo = `
+        <span class="item-qty-badge">×${it.quantity}</span>
+        <span class="item-weight-per">${it.weightPerItem.toFixed(3)} kg/ea</span>
+        <span class="item-dots">··</span>
+        <span class="item-weight${it.isManual ? ' manual' : ''}">${it.totalWeight.toFixed(3)} kg</span>
+      `;
+    } else {
+      weightInfo = `
+        <span class="item-dots">··············</span>
+        <span class="item-weight${it.isManual ? ' manual' : ''}">${it.totalWeight.toFixed(3)} kg</span>
+      `;
+    }
+
     li.innerHTML = `
       <span class="item-name">${escHtml(it.displayName)}</span>
-      <span class="item-dots">··············</span>
-      <span class="item-weight${it.isManual ? ' manual' : ''}">${it.weight.toFixed(3)} kg</span>
+      ${weightInfo}
       <button class="btn btn-danger" onclick="removeItem(${JSON.stringify(it.key)})">✕</button>
     `;
     ul.appendChild(li);
@@ -406,8 +466,8 @@ function renderList() {
 //  Render Totals
 // ─────────────────────────────────────────────
 function renderTotals() {
-  const totalW = laundryItems.reduce((s, i) => s + i.weight, 0);
-  document.getElementById('totalItems').textContent = laundryItems.length;
+  const totalW = laundryItems.reduce((s, i) => s + i.totalWeight, 0);
+  document.getElementById('totalItems').textContent  = laundryItems.length;
   document.getElementById('totalWeight').textContent = totalW.toFixed(3) + ' kg';
 }
 
@@ -426,13 +486,12 @@ function renderBags() {
     container.innerHTML = '';
     return;
   }
-
   const maxW = parseFloat(document.getElementById('bagMaxWeight').value) || 15;
   const bags = groupIntoBags(laundryItems, maxW);
 
   let html = '<div class="bags-grid">';
   bags.forEach((bag, idx) => {
-    const bagW = bag.reduce((s, i) => s + i.weight, 0);
+    const bagW = bag.reduce((s, i) => s + i.totalWeight, 0);
     html += `
       <div class="bag-card">
         <div class="bag-header">
@@ -440,7 +499,10 @@ function renderBags() {
           <span class="bag-weight">${bagW.toFixed(3)} kg</span>
         </div>
         <div class="bag-items">
-          ${bag.map(it => `<div>• ${escHtml(it.displayName)} <span style="color:#888">(${it.weight.toFixed(3)} kg)</span></div>`).join('')}
+          ${bag.map(it => {
+            const qtyStr = (it.mode === 'quantity' && it.quantity > 1) ? ` ×${it.quantity}` : '';
+            return `<div>• ${escHtml(it.displayName)}${qtyStr} <span style="color:#888">(${it.totalWeight.toFixed(3)} kg)</span></div>`;
+          }).join('')}
         </div>
       </div>`;
   });
@@ -449,18 +511,13 @@ function renderBags() {
 }
 
 function groupIntoBags(items, maxW) {
-  // First-fit decreasing bin packing
-  const sorted = [...items].sort((a, b) => b.weight - a.weight);
-  const bags = [];
+  const sorted = [...items].sort((a, b) => b.totalWeight - a.totalWeight);
+  const bags   = [];
   sorted.forEach(item => {
     let placed = false;
     for (const bag of bags) {
-      const used = bag.reduce((s, i) => s + i.weight, 0);
-      if (used + item.weight <= maxW + 0.0001) {
-        bag.push(item);
-        placed = true;
-        break;
-      }
+      const used = bag.reduce((s, i) => s + i.totalWeight, 0);
+      if (used + item.totalWeight <= maxW + 0.0001) { bag.push(item); placed = true; break; }
     }
     if (!placed) bags.push([item]);
   });
@@ -472,18 +529,19 @@ function groupIntoBags(items, maxW) {
 // ─────────────────────────────────────────────
 function buildSummaryText() {
   if (laundryItems.length === 0) return '— No items —';
-  const totalW = laundryItems.reduce((s, i) => s + i.weight, 0);
+  const totalW = laundryItems.reduce((s, i) => s + i.totalWeight, 0);
   let lines = [];
-
   laundryItems.forEach(it => {
     lines.push(`ITEM NAME: ${it.displayName}`);
-    lines.push(`WEIGHT: ${it.weight.toFixed(3)}kg`);
+    if (it.mode === 'quantity' && it.quantity > 1) {
+      lines.push(`QUANTITY: ${it.quantity}`);
+      lines.push(`WEIGHT PER ITEM: ${it.weightPerItem.toFixed(3)}kg`);
+    }
+    lines.push(`WEIGHT: ${it.totalWeight.toFixed(3)}kg`);
     lines.push('');
   });
-
   lines.push(`TOTAL ITEMS: ${laundryItems.length}`);
   lines.push(`TOTAL WEIGHT: ${totalW.toFixed(3)}kg`);
-
   return lines.join('\n');
 }
 
@@ -494,7 +552,7 @@ function renderSummary() {
 }
 
 // ─────────────────────────────────────────────
-//  Copy to Clipboard
+//  Copy
 // ─────────────────────────────────────────────
 function copySummary() {
   navigator.clipboard.writeText(window.latestSubmissionText).then(() => {
@@ -502,7 +560,6 @@ function copySummary() {
     btn.textContent = '✅ Copied!';
     setTimeout(() => { btn.textContent = '📋 Copy Summary'; }, 2000);
   }).catch(() => {
-    // fallback
     const ta = document.createElement('textarea');
     ta.value = window.latestSubmissionText;
     document.body.appendChild(ta);
@@ -513,54 +570,35 @@ function copySummary() {
 }
 
 // ─────────────────────────────────────────────
-//  JotForm Integration
+//  JotForm
 // ─────────────────────────────────────────────
 function setupJotform() {
   if (typeof JFCustomWidget === 'undefined') return;
-
   JFCustomWidget.subscribe('submit', function () {
-    JFCustomWidget.sendSubmit({
-      valid: true,
-      value: window.latestSubmissionText
-    });
+    JFCustomWidget.sendSubmit({ valid: true, value: window.latestSubmissionText });
   });
 }
 
 function broadcastToJotform() {
   if (typeof JFCustomWidget === 'undefined') return;
-  try {
-    JFCustomWidget.sendData({ value: window.latestSubmissionText });
-  } catch (e) { /* outside JotForm context */ }
+  try { JFCustomWidget.sendData({ value: window.latestSubmissionText }); } catch (e) {}
 }
 
 // ─────────────────────────────────────────────
-//  Future Hook: Load from Transaction Number
-//  To implement: override window.loadTransaction
+//  Future: Transaction Loader
 // ─────────────────────────────────────────────
 window.loadTransaction = function(txnNumber) {
-  // Future implementation:
-  // 1. Fetch transaction data from your API using txnNumber
-  // 2. Clear current laundryItems
-  // 3. For each item in transaction:
-  //    addItemProgrammatically(category, itemName, componentName, weight)
-  // 4. Call renderAll()
   console.log('[loadTransaction] Not yet implemented. TXN:', txnNumber);
   showAlert(`Transaction loading not yet implemented. (${txnNumber})`, 'warn');
 };
 
-/**
- * Programmatic item add — for future transaction loader or bulk import.
- * @param {string} category
- * @param {string} itemName
- * @param {string|null} component  (null if not a component-type item)
- * @param {number} weight
- */
-window.addItemProgrammatically = function(category, itemName, component, weight) {
+window.addItemProgrammatically = function(category, itemName, component, weightPerItem, quantity = 1) {
   const displayName = component ? `${itemName} - ${component}` : itemName;
   const key = makeKey(category, displayName);
-  if (usedKeys.has(key)) return false; // skip duplicates
-
-  laundryItems.push({ key, displayName, weight: parseFloat(weight), isManual: false, category });
+  if (usedKeys.has(key)) return false;
+  const mode = getCatMode(category);
+  const totalWeight = parseFloat((weightPerItem * quantity).toFixed(6));
+  laundryItems.push({ key, displayName, weightPerItem, quantity, totalWeight, isManual: false, category, mode });
   usedKeys.add(key);
   renderAll();
   return true;
@@ -569,23 +607,17 @@ window.addItemProgrammatically = function(category, itemName, component, weight)
 // ─────────────────────────────────────────────
 //  Utilities
 // ─────────────────────────────────────────────
-function makeKey(cat, name) {
-  return `${cat}::${name}`;
-}
+function makeKey(cat, name) { return `${cat}::${name}`; }
 
 function escHtml(str) {
   return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function showAlert(msg, type = 'warn') {
-  const box = document.getElementById('alertBox');
-  box.innerHTML = `<div class="alert alert-${type}">${escHtml(msg)}</div>`;
+  document.getElementById('alertBox').innerHTML =
+    `<div class="alert alert-${type}">${escHtml(msg)}</div>`;
 }
 
-function clearAlert() {
-  document.getElementById('alertBox').innerHTML = '';
-}
+function clearAlert() { document.getElementById('alertBox').innerHTML = ''; }
