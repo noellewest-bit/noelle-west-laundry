@@ -4,26 +4,26 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Noelle West Laundry Calculator</title>
- 
+
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.css" />
   <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
   <script src="https://js.jotform.com/JotFormCustomWidget.min.js"></script>
- 
+
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
 <div class="app-wrapper">
- 
+
   <div class="app-header">
     <h1>🧺 Noelle West Laundry Calculator</h1>
     <p>Select items from inventory — no manual typing needed</p>
   </div>
- 
+
   <!-- ── Item Selector Card ── -->
   <div class="card" id="selectorCard">
     <div class="card-title">➕ Add Item to Laundry List</div>
     <div id="alertBox"></div>
- 
+
     <!-- Row 1: Category + Item -->
     <div class="form-row cols-2">
       <div class="form-group">
@@ -39,7 +39,7 @@
         </select>
       </div>
     </div>
- 
+
     <!-- Row 2: Component (KGS categories only) -->
     <div class="form-row" id="componentRow">
       <div class="form-group" id="componentGroup" style="display:none;">
@@ -49,7 +49,7 @@
         </select>
       </div>
     </div>
- 
+
     <!-- Row 3: Weight Per Item + (for quantity cats) Quantity + Total Weight -->
     <div class="form-row cols-2" id="weightRow">
       <div class="form-group" id="weightGroup">
@@ -62,7 +62,7 @@
         <!-- Manual entry input (shown when no weight in workbook) -->
         <input type="number" id="weightInput" class="hidden" min="0" step="0.01" placeholder="Enter kg (e.g. 0.30)" />
       </div>
- 
+
       <!-- Quantity + Total Weight — only shown for QUANTITY_CATS -->
       <div class="form-group hidden" id="quantityRow">
         <label for="qtySelect">Quantity</label>
@@ -90,7 +90,7 @@
         </select>
       </div>
     </div>
- 
+
     <!-- Total Weight row — shown only for quantity categories -->
     <div class="form-row hidden" id="totalWeightRow">
       <div class="form-group">
@@ -100,10 +100,10 @@
         </div>
       </div>
     </div>
- 
+
     <button class="btn btn-primary btn-add" id="btnAdd" disabled>Add to Laundry List</button>
   </div>
- 
+
   <!-- ── Laundry List Card ── -->
   <div class="card">
     <div class="card-title">📋 Laundry List</div>
@@ -113,7 +113,7 @@
     </div>
     <ul class="laundry-list" id="laundryList"></ul>
   </div>
- 
+
   <!-- ── Totals Card ── -->
   <div class="card">
     <div class="card-title">📊 Totals</div>
@@ -128,7 +128,7 @@
       </div>
     </div>
   </div>
- 
+
   <!-- ── Bag Grouping Card ── -->
   <div class="card">
     <div class="card-title">🛄 Bag Grouping</div>
@@ -145,19 +145,19 @@
     </div>
     <div id="bagsOutput"></div>
   </div>
- 
+
   <!-- ── Summary Output Card ── -->
   <div class="card">
     <div class="card-title">📄 Summary Output</div>
     <pre class="summary-output" id="summaryOutput">—</pre>
     <button class="btn btn-primary copy-btn" id="btnCopy">📋 Copy Summary</button>
   </div>
- 
+
   <div class="app-footer">Noelle West Laundry Calculator • Powered by NW Inventory</div>
 </div>
- 
+
 <script src="app.js"></script>
- 
+
 <script>
 // Show/hide the totalWeightRow whenever quantityRow visibility changes
 // (handled inside app.js via showQuantityRow / hideQuantityRow)
