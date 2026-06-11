@@ -4,43 +4,26 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Noelle West Laundry Calculator</title>
-
-  <!-- Tom Select (searchable dropdowns) -->
+ 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.css" />
   <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
-
-  <!-- JotForm Widget Bridge -->
   <script src="https://js.jotform.com/JotFormCustomWidget.min.js"></script>
-
+ 
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
 <div class="app-wrapper">
-
-  <!-- Header -->
+ 
   <div class="app-header">
     <h1>🧺 Noelle West Laundry Calculator</h1>
     <p>Select items from inventory — no manual typing needed</p>
   </div>
-
-  <!-- ── FUTURE: Transaction Search (stub — hidden until implemented) ── -->
-  <div class="card hidden" id="txnSearchCard">
-    <div class="card-title">🔍 Load from Transaction</div>
-    <div class="txn-search-row">
-      <div class="form-group">
-        <label for="txnInput">Transaction Number</label>
-        <input type="text" id="txnInput" placeholder="e.g. NW-000123" />
-      </div>
-      <button class="btn btn-primary" id="btnLoadTxn">Load</button>
-    </div>
-  </div>
-
+ 
   <!-- ── Item Selector Card ── -->
   <div class="card" id="selectorCard">
     <div class="card-title">➕ Add Item to Laundry List</div>
-
     <div id="alertBox"></div>
-
+ 
     <!-- Row 1: Category + Item -->
     <div class="form-row cols-2">
       <div class="form-group">
@@ -56,42 +39,83 @@
         </select>
       </div>
     </div>
-
-    <!-- Row 2: Component (shown only for KGS categories) + Weight -->
-    <div class="form-row cols-2">
+ 
+    <!-- Row 2: Component (KGS categories only) -->
+    <div class="form-row" id="componentRow">
       <div class="form-group" id="componentGroup" style="display:none;">
         <label for="componentSelect">Component</label>
         <select id="componentSelect">
           <option value="">— Select component —</option>
         </select>
       </div>
+    </div>
+ 
+    <!-- Row 3: Weight Per Item + (for quantity cats) Quantity + Total Weight -->
+    <div class="form-row cols-2" id="weightRow">
       <div class="form-group" id="weightGroup">
-        <label for="weightInput">Weight</label>
+        <label for="weightInput" id="weightLabel">Weight</label>
+        <!-- Read-only display chip (auto-populated) -->
         <div id="weightDisplay" class="weight-display empty">
           <span class="weight-val">—</span>
           <span class="weight-unit">kg</span>
         </div>
+        <!-- Manual entry input (shown when no weight in workbook) -->
         <input type="number" id="weightInput" class="hidden" min="0" step="0.01" placeholder="Enter kg (e.g. 0.30)" />
       </div>
+ 
+      <!-- Quantity + Total Weight — only shown for QUANTITY_CATS -->
+      <div class="form-group hidden" id="quantityRow">
+        <label for="qtySelect">Quantity</label>
+        <select id="qtySelect">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+          <option value="9">9</option>
+          <option value="10">10</option>
+          <option value="11">11</option>
+          <option value="12">12</option>
+          <option value="13">13</option>
+          <option value="14">14</option>
+          <option value="15">15</option>
+          <option value="16">16</option>
+          <option value="17">17</option>
+          <option value="18">18</option>
+          <option value="19">19</option>
+          <option value="20">20</option>
+        </select>
+      </div>
     </div>
-
+ 
+    <!-- Total Weight row — shown only for quantity categories -->
+    <div class="form-row hidden" id="totalWeightRow">
+      <div class="form-group">
+        <label>Total Weight</label>
+        <div class="weight-display total-weight-display">
+          <span id="totalWeightDisplay">—</span>
+        </div>
+      </div>
+    </div>
+ 
     <button class="btn btn-primary btn-add" id="btnAdd" disabled>Add to Laundry List</button>
   </div>
-
+ 
   <!-- ── Laundry List Card ── -->
-  <div class="card" id="listCard">
+  <div class="card">
     <div class="card-title">📋 Laundry List</div>
-
     <div id="listEmpty" class="empty-state">
       <div class="empty-icon">🧺</div>
       <p>No items added yet.<br>Use the form above to add items.</p>
     </div>
-
     <ul class="laundry-list" id="laundryList"></ul>
   </div>
-
+ 
   <!-- ── Totals Card ── -->
-  <div class="card" id="totalsCard">
+  <div class="card">
     <div class="card-title">📊 Totals</div>
     <div class="totals-row">
       <div class="total-box">
@@ -100,15 +124,14 @@
       </div>
       <div class="total-box">
         <div class="t-label">Total Weight</div>
-        <div class="t-value" id="totalWeight">0.00 kg</div>
+        <div class="t-value" id="totalWeight">0.000 kg</div>
       </div>
     </div>
   </div>
-
+ 
   <!-- ── Bag Grouping Card ── -->
-  <div class="card" id="bagCard">
+  <div class="card">
     <div class="card-title">🛄 Bag Grouping</div>
-
     <div class="bag-toggle-row">
       <label class="toggle-label">
         <input type="checkbox" id="bagToggle" />
@@ -120,21 +143,26 @@
         kg
       </div>
     </div>
-
     <div id="bagsOutput"></div>
   </div>
-
+ 
   <!-- ── Summary Output Card ── -->
-  <div class="card" id="summaryCard">
+  <div class="card">
     <div class="card-title">📄 Summary Output</div>
     <pre class="summary-output" id="summaryOutput">—</pre>
     <button class="btn btn-primary copy-btn" id="btnCopy">📋 Copy Summary</button>
   </div>
-
+ 
   <div class="app-footer">Noelle West Laundry Calculator • Powered by NW Inventory</div>
-
 </div>
-
+ 
 <script src="app.js"></script>
+ 
+<script>
+// Show/hide the totalWeightRow whenever quantityRow visibility changes
+// (handled inside app.js via showQuantityRow / hideQuantityRow)
+const _origShow = window.showQuantityRow;
+const _origHide = window.hideQuantityRow;
+</script>
 </body>
 </html>
