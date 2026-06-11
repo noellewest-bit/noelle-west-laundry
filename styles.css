@@ -322,58 +322,11 @@ body {
   color: var(--brand);
 }
 
-/* ---- Bag Grouping ---- */
-.bag-toggle-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-  flex-wrap: wrap;
-}
-
-.toggle-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  cursor: pointer;
-  user-select: none;
-}
-
-.toggle-label input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--brand);
-  cursor: pointer;
-}
-
-.bag-max-input {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.bag-max-input input {
-  width: 70px;
-  padding: 6px 10px;
-  border: 1.5px solid var(--border);
-  border-radius: 8px;
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--brand);
-  background: #FAFBFC;
-  text-align: center;
-  outline: none;
-}
-
-.bag-max-input input:focus { border-color: var(--brand); }
-
+/* ---- Bag Cards ---- */
 .bags-grid {
   display: grid;
   gap: 12px;
+  margin-top: 4px;
 }
 
 .bag-card {
@@ -395,18 +348,76 @@ body {
 .bag-header h3 {
   font-size: 14px;
   font-weight: 700;
+  flex: 1;
 }
 
 .bag-header .bag-weight {
   font-size: 13px;
   opacity: 0.9;
+  margin-right: 10px;
+}
+
+.bag-delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+  opacity: 0.8;
+  padding: 0 2px;
+  line-height: 1;
+}
+.bag-delete-btn:hover { opacity: 1; }
+
+.bag-item-picker {
+  padding: 0 14px;
 }
 
 .bag-items {
-  padding: 10px 14px;
+  padding: 4px 14px 10px;
   font-size: 13px;
-  color: var(--text);
-  line-height: 1.8;
+}
+
+.bag-item-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid #E8F0FD;
+}
+.bag-item-row:last-child { border-bottom: none; }
+
+.bag-item-wt {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.bag-item-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--danger);
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  line-height: 1;
+}
+.bag-item-remove:hover { background: #FFF0F0; }
+
+.bag-no-items {
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+  padding: 6px 0;
+}
+
+.bag-total-row {
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--brand);
+  background: #EEF4FF;
+  border-top: 1px solid #C8DAFA;
 }
 
 /* ---- Summary Output ---- */
