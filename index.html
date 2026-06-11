@@ -34,70 +34,62 @@
       </div>
       <div class="form-group">
         <label for="itemSelect">Item</label>
-        <select id="itemSelect" placeholder="Search item…">
+        <select id="itemSelect">
           <option value="">— Select category first —</option>
         </select>
       </div>
     </div>
 
     <!-- Row 2: Component (KGS categories only) -->
-    <div class="form-row" id="componentRow">
-      <div class="form-group" id="componentGroup" style="display:none;">
-        <label for="componentSelect">Component</label>
-        <select id="componentSelect">
-          <option value="">— Select component —</option>
-        </select>
-      </div>
+    <div class="form-group" id="componentGroup" style="display:none; margin-bottom:12px;">
+      <label for="componentSelect">Component</label>
+      <select id="componentSelect">
+        <option value="">— Select component —</option>
+      </select>
     </div>
 
-    <!-- Row 3: Weight Per Item + (for quantity cats) Quantity + Total Weight -->
-    <div class="form-row cols-2" id="weightRow">
-      <div class="form-group" id="weightGroup">
-        <label for="weightInput" id="weightLabel">Weight</label>
-        <!-- Read-only display chip (auto-populated) -->
-        <div id="weightDisplay" class="weight-display empty">
-          <span class="weight-val">—</span>
-          <span class="weight-unit">kg</span>
-        </div>
-        <!-- Manual entry input (shown when no weight in workbook) -->
-        <input type="number" id="weightInput" class="hidden" min="0" step="0.01" placeholder="Enter kg (e.g. 0.30)" />
+    <!-- Row 3: Weight Per Item -->
+    <div class="form-group" style="margin-bottom:12px;">
+      <label for="weightInput" id="weightLabel">Weight</label>
+      <div id="weightDisplay" class="weight-display empty">
+        <span class="weight-val">—</span>
+        <span class="weight-unit">kg</span>
       </div>
-
-      <!-- Quantity + Total Weight — only shown for QUANTITY_CATS -->
-      <div class="form-group hidden" id="quantityRow">
-        <label for="qtySelect">Quantity</label>
-        <select id="qtySelect">
-          <option value="1">1</option>
-          <option value="2">2</option>
-          <option value="3">3</option>
-          <option value="4">4</option>
-          <option value="5">5</option>
-          <option value="6">6</option>
-          <option value="7">7</option>
-          <option value="8">8</option>
-          <option value="9">9</option>
-          <option value="10">10</option>
-          <option value="11">11</option>
-          <option value="12">12</option>
-          <option value="13">13</option>
-          <option value="14">14</option>
-          <option value="15">15</option>
-          <option value="16">16</option>
-          <option value="17">17</option>
-          <option value="18">18</option>
-          <option value="19">19</option>
-          <option value="20">20</option>
-        </select>
-      </div>
+      <input type="number" id="weightInput" style="display:none;" min="0" step="0.01" placeholder="Enter kg (e.g. 0.30)" />
     </div>
 
-    <!-- Total Weight row — shown only for quantity categories -->
-    <div class="form-row hidden" id="totalWeightRow">
-      <div class="form-group">
-        <label>Total Weight</label>
-        <div class="weight-display total-weight-display">
-          <span id="totalWeightDisplay">—</span>
-        </div>
+    <!-- Row 4: Quantity — only shown for QUANTITY_CATS -->
+    <div class="form-group" id="quantityRow" style="display:none; margin-bottom:12px;">
+      <label for="qtySelect">Quantity</label>
+      <select id="qtySelect">
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+        <option value="7">7</option>
+        <option value="8">8</option>
+        <option value="9">9</option>
+        <option value="10">10</option>
+        <option value="11">11</option>
+        <option value="12">12</option>
+        <option value="13">13</option>
+        <option value="14">14</option>
+        <option value="15">15</option>
+        <option value="16">16</option>
+        <option value="17">17</option>
+        <option value="18">18</option>
+        <option value="19">19</option>
+        <option value="20">20</option>
+      </select>
+    </div>
+
+    <!-- Row 5: Total Weight — only shown for QUANTITY_CATS -->
+    <div class="form-group" id="totalWeightRow" style="display:none; margin-bottom:12px;">
+      <label>Total Weight</label>
+      <div class="weight-display total-weight-display">
+        <span id="totalWeightDisplay">—</span>
       </div>
     </div>
 
@@ -157,12 +149,5 @@
 </div>
 
 <script src="app.js"></script>
-
-<script>
-// Show/hide the totalWeightRow whenever quantityRow visibility changes
-// (handled inside app.js via showQuantityRow / hideQuantityRow)
-const _origShow = window.showQuantityRow;
-const _origHide = window.hideQuantityRow;
-</script>
 </body>
 </html>
