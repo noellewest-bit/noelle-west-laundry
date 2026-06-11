@@ -608,8 +608,6 @@ function buildSummaryText() {
 function renderSummary() {
   const text = buildSummaryText();
   window.latestSubmissionText = text;
-  document.getElementById('summaryOutput').textContent = text;
-  // Also update the grand total box
   const totalW = laundryItems.reduce((s, i) => s + i.totalWeight, 0);
   const gtEl = document.getElementById('grandTotalWeight');
   if (gtEl) gtEl.textContent = totalW.toFixed(3) + ' kg';
