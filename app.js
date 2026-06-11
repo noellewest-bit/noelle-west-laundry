@@ -221,12 +221,11 @@ function setWeightDisplay(val, mode) {
 
   label.textContent = mode === 'quantity' ? 'Weight Per Item' : 'Weight';
 
-  disp.classList.remove('empty', 'hidden');
+  disp.classList.remove('empty');
+  disp.style.display = '';
   disp.innerHTML = `<span class="weight-val">${parseFloat(val).toFixed(3)}</span><span class="weight-unit">kg</span>`;
-  inp.classList.add('hidden');
+  inp.style.display = 'none';
   inp.value = '';
-
-  // Store on the display element for easy retrieval
   disp.dataset.weight = val;
 }
 
@@ -237,9 +236,9 @@ function showManualWeightInput(mode) {
 
   label.textContent = mode === 'quantity' ? 'Weight Per Item' : 'Weight';
 
-  disp.classList.add('hidden');
+  disp.style.display = 'none';
   delete disp.dataset.weight;
-  inp.classList.remove('hidden');
+  inp.style.display = '';
   inp.value = '';
   inp.placeholder = mode === 'quantity' ? 'Weight per item (kg)' : 'Enter kg (e.g. 0.30)';
   inp.focus();
@@ -252,13 +251,12 @@ function resetWeightArea() {
 
   label.textContent = 'Weight';
   disp.classList.add('empty');
-  disp.classList.remove('hidden');
+  disp.style.display = '';
   disp.innerHTML = '<span class="weight-val">—</span><span class="weight-unit">kg</span>';
   delete disp.dataset.weight;
-  inp.classList.add('hidden');
+  inp.style.display = 'none';
   inp.value = '';
 
-  // Also clear total weight display
   const tw = document.getElementById('totalWeightDisplay');
   if (tw) tw.textContent = '—';
 }
@@ -267,14 +265,14 @@ function resetWeightArea() {
 //  Quantity Row
 // ─────────────────────────────────────────────
 function showQuantityRow() {
-  document.getElementById('quantityRow').classList.remove('hidden');
-  document.getElementById('totalWeightRow').classList.remove('hidden');
+  document.getElementById('quantityRow').style.display = '';
+  document.getElementById('totalWeightRow').style.display = '';
   document.getElementById('qtySelect').value = '1';
 }
 
 function hideQuantityRow() {
-  document.getElementById('quantityRow').classList.add('hidden');
-  document.getElementById('totalWeightRow').classList.add('hidden');
+  document.getElementById('quantityRow').style.display = 'none';
+  document.getElementById('totalWeightRow').style.display = 'none';
   document.getElementById('qtySelect').value = '1';
   const tw = document.getElementById('totalWeightDisplay');
   if (tw) tw.textContent = '—';
@@ -294,7 +292,7 @@ function onWeightInput() {
 function getCurrentWeightPerItem() {
   const disp = document.getElementById('weightDisplay');
   const inp  = document.getElementById('weightInput');
-  if (!inp.classList.contains('hidden')) {
+  if (inp.style.display !== 'none' && inp.style.display !== '') {
     return parseFloat(inp.value) || null;
   }
   if (disp.dataset.weight) {
@@ -342,7 +340,6 @@ function canAdd() {
   // Need a valid weight
   const wpi = getCurrentWeightPerItem();
   if (wpi === null || isNaN(wpi) || wpi <= 0) return false;
-
   return true;
 }
 
@@ -378,7 +375,7 @@ function onAddItem() {
 
   // Determine if weight was manually entered
   const inp = document.getElementById('weightInput');
-  isManual = !inp.classList.contains('hidden');
+  isManual = inp.style.display !== 'none';
 
   const qty         = mode === 'quantity' ? (parseInt(document.getElementById('qtySelect').value) || 1) : 1;
   const totalWeight = parseFloat((weightPerItem * qty).toFixed(6));
