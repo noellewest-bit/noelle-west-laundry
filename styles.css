@@ -508,6 +508,30 @@ body {
 
 .txn-search-row .form-group { flex: 1; }
 
+/* ---- Grand Total Weight Card ---- */
+.grand-total-card {
+  text-align: center;
+  padding: 24px;
+  background: var(--brand);
+  border: none;
+}
+
+.grand-total-label {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: rgba(255,255,255,0.8);
+  margin-bottom: 8px;
+}
+
+.grand-total-value {
+  font-size: 38px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -1px;
+}
+
 /* ---- Footer ---- */
 .app-footer {
   text-align: center;
