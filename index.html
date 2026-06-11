@@ -129,11 +129,19 @@
       <p style="font-size:13px;">Add items to the laundry list first, then group them into bags.</p>
     </div>
 
-    <!-- Bags are rendered here dynamically -->
-    <div id="bagsOutput"></div>
+    <div id="bagSetup" style="display:none;">
+      <div class="form-group" style="margin-bottom:12px;">
+        <label for="numBagsInput">How many bags?</label>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <input type="number" id="numBagsInput" min="1" max="20" value="1"
+            style="width:90px;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:16px;font-weight:700;color:var(--brand);text-align:center;font-family:inherit;outline:none;" />
+          <button class="btn btn-primary" onclick="onSetBags()">Set Bags</button>
+        </div>
+      </div>
+    </div>
 
-    <!-- Add Bag button -->
-    <button class="btn btn-primary" id="btnAddBag" style="margin-top:12px; display:none;" onclick="onClickAddBag()">+ Add Bag</button>
+    <!-- Bags rendered here -->
+    <div id="bagsOutput"></div>
   </div>
 
   <!-- ── Grand Total Weight ── -->
