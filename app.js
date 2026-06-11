@@ -292,9 +292,12 @@ function onWeightInput() {
 function getCurrentWeightPerItem() {
   const disp = document.getElementById('weightDisplay');
   const inp  = document.getElementById('weightInput');
-  if (inp.style.display !== 'none' && inp.style.display !== '') {
-    return parseFloat(inp.value) || null;
+  // Input is visible when display is NOT 'none'
+  if (inp.style.display !== 'none') {
+    const v = parseFloat(inp.value);
+    return (!isNaN(v) && v > 0) ? v : null;
   }
+  // Otherwise read from the auto-populated display chip
   if (disp.dataset.weight) {
     return parseFloat(disp.dataset.weight);
   }
