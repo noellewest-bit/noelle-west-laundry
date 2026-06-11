@@ -480,15 +480,17 @@ function renderTotals() {
 // bags[i] = { entries: [ { key, qty } ] }
 let bags = [];
 
+// Called directly from HTML onclick — guaranteed to work
+window.onClickAddBag = function() {
+  if (laundryItems.length === 0) return;
+  bags.push({ entries: [] });
+  renderAllBags();
+  renderSummary();
+  broadcastToJotform();
+};
+
 function initBagSection() {
-  // Use onclick on the element directly — survives any DOM changes elsewhere
-  document.getElementById('btnAddBag').onclick = function() {
-    if (laundryItems.length === 0) return;
-    bags.push({ entries: [] });
-    renderAllBags();
-    renderSummary();
-    broadcastToJotform();
-  };
+  // nothing needed — button uses inline onclick
 }
 
 /** Called after laundryItems changes */
