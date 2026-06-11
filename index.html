@@ -122,20 +122,18 @@
   </div>
 
   <!-- ── Bag Grouping Card ── -->
-  <div class="card">
+  <div class="card" id="bagCard">
     <div class="card-title">🛄 Bag Grouping</div>
-    <div class="bag-toggle-row">
-      <label class="toggle-label">
-        <input type="checkbox" id="bagToggle" />
-        Group Into Bags
-      </label>
-      <div class="bag-max-input" id="bagMaxRow" style="display:none;">
-        Max weight per bag:
-        <input type="number" id="bagMaxWeight" value="15" min="1" step="0.5" />
-        kg
-      </div>
+
+    <div id="bagEmpty" class="empty-state" style="padding:16px 0 8px;">
+      <p style="font-size:13px;">Add items to the laundry list first, then group them into bags.</p>
     </div>
+
+    <!-- Bags are rendered here dynamically -->
     <div id="bagsOutput"></div>
+
+    <!-- Add Bag button -->
+    <button class="btn btn-primary" id="btnAddBag" style="margin-top:12px; display:none;">+ Add Bag</button>
   </div>
 
   <!-- ── Grand Total Weight ── -->
