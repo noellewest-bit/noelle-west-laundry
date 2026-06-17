@@ -1,10 +1,29 @@
 /**
  * Noelle West Laundry Calculator
+ * Loads inventory live from Google Sheets, falls back to master-items.json
  */
 
-// ── Category mode ──
-const WEIGHT_ONLY_CATS = new Set(['BGI','BGS','PGI','PGS','PGC','FIL','MG','CD','MS','CS','PET','S-UPPER']);
-const QUANTITY_CATS    = new Set(['BCPO','BOY','BPSC','BPO','BPOL','BPS','COAT BARONG','BCC','BPOC','VST','POLO','ACC','PEN','PANTS']);
+// ─────────────────────────────────────────────
+//  Google Sheets Config
+// ─────────────────────────────────────────────
+const SHEET_ID = '1-QD9UJ99Rjl1JPlBdKPo7hz5MBOiJKkMyD-qWlD520s';
+
+// All sheet names to load (in order)
+const SHEET_NAMES = [
+  'BGS','BGI','PGS','PGI','MOH','BMG','FGG','PGC','FIL',
+  'MG','CD','MS','CS','PET-#','PET',
+  'BCPO','BOY','BPSC','BPO','BPOL','BPS','COAT BARONG',
+  'BCC','BPOC','VST','S-UPPER','POLO','ACC','PEN','PANTS'
+];
+
+// Category modes
+const WEIGHT_ONLY_CATS = new Set([
+  'BGI','BGS','PGI','PGS','PGC','FIL','MG','CD','MS','CS','PET-#'
+]);
+const QUANTITY_CATS = new Set([
+  'BCPO','BOY','BPSC','BPO','BPOL','BPS','COAT BARONG','BCC','BPOC',
+  'VST','S-UPPER','POLO','ACC','PEN','PANTS','PET','MOH','BMG','FGG'
+]);
 
 function getCatMode(cat) {
   if (WEIGHT_ONLY_CATS.has(cat)) return 'weight-only';
@@ -12,49 +31,219 @@ function getCatMode(cat) {
   return 'weight-only';
 }
 
-// ── State ──
+// ─────────────────────────────────────────────
+//  App State
+// ─────────────────────────────────────────────
 let INVENTORY    = {};
-let laundryItems = [];   // { key, displayName, weightPerItem, quantity, totalWeight, isManual, category, mode }
+let laundryItems = [];
 let usedKeys     = new Set();
 let tomItem      = null;
-
-// bags[i] = { entries: [ { key, qty } ] }
-// key = laundryItem.key; qty = units assigned to this bag
-let bags = [];
-
+let bags         = [];
 window.latestSubmissionText = '';
 
-// ── Boot ──
+// ─────────────────────────────────────────────
+//  Boot
+// ─────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  showLoadingState(true);
   await loadInventory();
+  showLoadingState(false);
   buildCategoryDropdown();
   bindEvents();
   setupJotform();
   renderAll();
 });
 
-// ── Load Inventory ──
+function showLoadingState(loading) {
+  const btn = document.getElementById('btnAdd');
+  const cat = document.getElementById('catSelect');
+  if (loading) {
+    document.getElementById('loadingBanner').style.display = '';
+    if (btn) btn.disabled = true;
+    if (cat) cat.disabled = true;
+  } else {
+    document.getElementById('loadingBanner').style.display = 'none';
+    if (cat) cat.disabled = false;
+  }
+}
+
+// ─────────────────────────────────────────────
+//  Inventory Loading — Google Sheets first, JSON fallback
+// ─────────────────────────────────────────────
 async function loadInventory() {
+  try {
+    const data = await loadFromGoogleSheets();
+    if (data && Object.keys(data).length > 0) {
+      INVENTORY = data;
+      showSourceBadge('live');
+      return;
+    }
+  } catch(e) {
+    console.warn('Google Sheets load failed, using local JSON:', e);
+  }
+  // Fallback
   try {
     const res = await fetch('master-items.json');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     INVENTORY = await res.json();
+    showSourceBadge('local');
   } catch(e) {
     showAlert('⚠️ Could not load inventory data.', 'error');
   }
 }
 
-// ── Category Dropdown ──
+function showSourceBadge(source) {
+  const badge = document.getElementById('sourceBadge');
+  if (!badge) return;
+  if (source === 'live') {
+    badge.textContent = '🟢 Live from Google Sheets';
+    badge.style.color = '#3DAB6A';
+  } else {
+    badge.textContent = '🟡 Using local inventory (offline)';
+    badge.style.color = '#E8B84B';
+  }
+}
+
+// ─────────────────────────────────────────────
+//  Google Sheets CSV Parser
+// ─────────────────────────────────────────────
+async function loadFromGoogleSheets() {
+  const result = {};
+
+  // Fetch all sheets in parallel
+  const fetches = SHEET_NAMES.map(name =>
+    fetch(`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(name)}`)
+      .then(r => r.ok ? r.text() : Promise.reject(r.status))
+      .then(csv => ({ name, csv }))
+      .catch(() => ({ name, csv: null }))
+  );
+
+  const results = await Promise.all(fetches);
+
+  for (const { name, csv } of results) {
+    if (!csv || csv.trim().startsWith('<') || csv.trim() === '') continue;
+
+    const rows   = parseCSV(csv);
+    if (rows.length < 2) continue;
+    const header = rows[0].map(h => h.trim().toUpperCase());
+    const data   = rows.slice(1);
+
+    // Find name column
+    let nameIdx = header.findIndex(h => h.includes('PRODUCT NAME'));
+    if (nameIdx === -1) nameIdx = 0;
+
+    // Find weight columns
+    const kgColIdx    = findKgColIdx(header);
+    const kgsColIdxs  = findKgsColIdxs(header);
+
+    // Force quantity mode for these cats
+    const forceQty = QUANTITY_CATS.has(name);
+
+    const items = [];
+    for (const row of data) {
+      const rawName = row[nameIdx];
+      if (!rawName || rawName.trim() === '') continue;
+      const itemName = rawName.trim();
+
+      if (forceQty) {
+        items.push({ name: itemName, type: 'manual' });
+      } else if (kgsColIdxs.length > 0) {
+        const components = {};
+        kgsColIdxs.forEach(({ label, idx }) => {
+          components[label] = toFloat(row[idx]);
+        });
+        items.push({ name: itemName, components, type: 'components' });
+      } else if (kgColIdx >= 0) {
+        items.push({ name: itemName, weight: toFloat(row[kgColIdx]), type: 'auto' });
+      } else {
+        items.push({ name: itemName, type: 'manual' });
+      }
+    }
+
+    if (items.length === 0) continue;
+
+    if (forceQty) {
+      result[name] = { type: 'manual', items };
+    } else if (kgsColIdxs.length > 0) {
+      result[name] = { type: 'components', components: kgsColIdxs.map(k => k.label), items };
+    } else if (kgColIdx >= 0) {
+      result[name] = { type: 'auto', items };
+    } else {
+      result[name] = { type: 'manual', items };
+    }
+  }
+
+  return result;
+}
+
+function findKgColIdx(header) {
+  return header.findIndex(h => /KILO/.test(h) && !h.includes('(KGS)'));
+}
+
+function findKgsColIdxs(header) {
+  const result = [];
+  header.forEach((h, idx) => {
+    if (h.includes('(KGS)')) {
+      const label = h.replace('(KGS)', '').trim();
+      result.push({ label, idx });
+    }
+  });
+  return result;
+}
+
+function toFloat(val) {
+  if (val === null || val === undefined || val === '') return null;
+  const s = String(val).replace(/[^\d.]/g, '');
+  const f = parseFloat(s);
+  return isNaN(f) ? null : f;
+}
+
+// ─────────────────────────────────────────────
+//  Minimal CSV parser (handles quoted fields)
+// ─────────────────────────────────────────────
+function parseCSV(text) {
+  const rows = [];
+  const lines = text.split(/\r?\n/);
+  for (const line of lines) {
+    if (line.trim() === '') continue;
+    const row = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQ && line[i+1] === '"') { cur += '"'; i++; }
+        else inQ = !inQ;
+      } else if (ch === ',' && !inQ) {
+        row.push(cur); cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    row.push(cur);
+    rows.push(row);
+  }
+  return rows;
+}
+
+// ─────────────────────────────────────────────
+//  Category Dropdown
+// ─────────────────────────────────────────────
 function buildCategoryDropdown() {
   const sel = document.getElementById('catSelect');
-  Object.keys(INVENTORY).sort().forEach(cat => {
+  // Use SHEET_NAMES order (not alphabetical) to match sheet order
+  const cats = SHEET_NAMES.filter(n => INVENTORY[n]);
+  // Also add any extra cats not in SHEET_NAMES
+  Object.keys(INVENTORY).forEach(k => { if (!cats.includes(k)) cats.push(k); });
+  cats.forEach(cat => {
     const opt = document.createElement('option');
     opt.value = cat; opt.textContent = cat;
     sel.appendChild(opt);
   });
 }
 
-// ── Bind Events ──
+// ─────────────────────────────────────────────
+//  Bind Events
+// ─────────────────────────────────────────────
 function bindEvents() {
   document.getElementById('catSelect').addEventListener('change', onCategoryChange);
   document.getElementById('componentSelect').addEventListener('change', onComponentChange);
@@ -63,7 +252,9 @@ function bindEvents() {
   document.getElementById('btnAdd').addEventListener('click', onAddItem);
 }
 
-// ── Category Change ──
+// ─────────────────────────────────────────────
+//  Category Change
+// ─────────────────────────────────────────────
 function onCategoryChange() {
   const cat = document.getElementById('catSelect').value;
   clearAlert();
@@ -78,7 +269,9 @@ function onCategoryChange() {
   if (getCatMode(cat) === 'quantity') showQtyRow();
 }
 
-// ── Item Dropdown (Tom Select) ──
+// ─────────────────────────────────────────────
+//  Item Dropdown (Tom Select)
+// ─────────────────────────────────────────────
 function resetItemDropdown() {
   if (tomItem) { tomItem.destroy(); tomItem = null; }
   document.getElementById('itemSelect').innerHTML = '<option value="">— Select category first —</option>';
@@ -100,12 +293,14 @@ function buildItemDropdown(cat, items) {
   });
 }
 
-// ── Item Change ──
+// ─────────────────────────────────────────────
+//  Item Change
+// ─────────────────────────────────────────────
 function onItemChange(cat, itemName) {
   hideComponent(); resetWeightArea(); updateAddButton();
   if (!itemName || !INVENTORY[cat]) return;
   const catData = INVENTORY[cat];
-  const item = catData.items.find(i => i.name === itemName);
+  const item    = catData.items.find(i => i.name === itemName);
   if (!item) return;
   const mode = getCatMode(cat);
   if (catData.type === 'components') {
@@ -120,7 +315,9 @@ function onItemChange(cat, itemName) {
   updateAddButton();
 }
 
-// ── Component ──
+// ─────────────────────────────────────────────
+//  Component
+// ─────────────────────────────────────────────
 function showComponentDropdown(componentNames, item) {
   const grp = document.getElementById('componentGroup');
   const sel  = document.getElementById('componentSelect');
@@ -156,7 +353,9 @@ function onComponentChange() {
   updateAddButton();
 }
 
-// ── Weight ──
+// ─────────────────────────────────────────────
+//  Weight Area
+// ─────────────────────────────────────────────
 function setWeightDisplay(val, mode) {
   const disp = document.getElementById('weightDisplay');
   const inp  = document.getElementById('weightInput');
@@ -201,10 +400,14 @@ function getCurrentWeightPerItem() {
   return disp.dataset.weight ? parseFloat(disp.dataset.weight) : null;
 }
 
-// ── Qty Row ──
+// ─────────────────────────────────────────────
+//  Quantity Row
+// ─────────────────────────────────────────────
 function showQtyRow() { document.getElementById('qtyTotalRow').style.display = ''; }
-function hideQtyRow()  { document.getElementById('qtyTotalRow').style.display = 'none'; document.getElementById('qtySelect').value = '1'; }
-
+function hideQtyRow()  {
+  document.getElementById('qtyTotalRow').style.display = 'none';
+  document.getElementById('qtySelect').value = '1';
+}
 function onQtyChange()   { updateTotalWeightDisplay(); updateAddButton(); }
 function onWeightInput() { updateTotalWeightDisplay(); updateAddButton(); }
 
@@ -217,7 +420,9 @@ function updateTotalWeightDisplay() {
   if (tw) tw.textContent = (wpi && wpi > 0) ? (wpi * qty).toFixed(3) + ' kg' : '—';
 }
 
-// ── Add Button ──
+// ─────────────────────────────────────────────
+//  Add Button
+// ─────────────────────────────────────────────
 function updateAddButton() {
   document.getElementById('btnAdd').disabled = !canAdd();
 }
@@ -230,7 +435,9 @@ function canAdd() {
   return wpi !== null && !isNaN(wpi) && wpi > 0;
 }
 
-// ── Add Item to Laundry List ──
+// ─────────────────────────────────────────────
+//  Add Item to Laundry List
+// ─────────────────────────────────────────────
 function onAddItem() {
   clearAlert();
   const cat      = document.getElementById('catSelect').value;
@@ -265,7 +472,9 @@ function onAddItem() {
   renderAll();
 }
 
-// ── Remove Item from Laundry List ──
+// ─────────────────────────────────────────────
+//  Remove Item
+// ─────────────────────────────────────────────
 function removeItem(key) {
   laundryItems = laundryItems.filter(i => i.key !== key);
   usedKeys.delete(key);
@@ -273,7 +482,9 @@ function removeItem(key) {
   renderAll();
 }
 
-// ── Render All ──
+// ─────────────────────────────────────────────
+//  Render All
+// ─────────────────────────────────────────────
 function renderAll() {
   renderList();
   renderTotals();
@@ -282,7 +493,9 @@ function renderAll() {
   broadcastToJotform();
 }
 
-// ── Render Laundry List ──
+// ─────────────────────────────────────────────
+//  Render Laundry List
+// ─────────────────────────────────────────────
 function renderList() {
   const ul    = document.getElementById('laundryList');
   const empty = document.getElementById('listEmpty');
@@ -295,32 +508,34 @@ function renderList() {
     const isQty = it.mode === 'quantity' && it.quantity > 1;
     li.innerHTML = `
       <span class="item-name">${escHtml(it.displayName)}</span>
-      ${isQty ? `<span class="item-qty-badge">×${it.quantity}</span>
-                 <span class="item-weight-per">${it.weightPerItem.toFixed(3)}/ea</span>
-                 <span class="item-dots">··</span>` : `<span class="item-dots">·········</span>`}
+      ${isQty
+        ? `<span class="item-qty-badge">×${it.quantity}</span>
+           <span class="item-weight-per">${it.weightPerItem.toFixed(3)}/ea</span>
+           <span class="item-dots">··</span>`
+        : `<span class="item-dots">·········</span>`}
       <span class="item-weight${it.isManual?' manual':''}">${it.totalWeight.toFixed(3)} kg</span>
       <button class="btn btn-danger" onclick="removeItem(${JSON.stringify(it.key)})">✕</button>`;
     ul.appendChild(li);
   });
 }
 
-// ── Render Totals ──
+// ─────────────────────────────────────────────
+//  Render Totals
+// ─────────────────────────────────────────────
 function renderTotals() {
   const totalW = laundryItems.reduce((s, i) => s + i.totalWeight, 0);
   document.getElementById('totalItems').textContent  = laundryItems.length;
   document.getElementById('totalWeight').textContent = totalW.toFixed(3) + ' kg';
 }
 
-// ════════════════════════════════════════════
-//  BAG GROUPING — Pool + Columns
-// ════════════════════════════════════════════
+// ═════════════════════════════════════════════
+//  BAG GROUPING — Pool + Side-by-side columns
+// ═════════════════════════════════════════════
 
-// Called from HTML onclick="onSetBags()"
 window.onSetBags = function() {
-  const n       = parseInt(document.getElementById('numBagsInput').value) || 1;
-  const clamped = Math.max(1, Math.min(20, n));
-  while (bags.length < clamped) bags.push({ entries: [] });
-  while (bags.length > clamped) bags.pop();
+  const n = Math.max(1, Math.min(20, parseInt(document.getElementById('numBagsInput').value) || 1));
+  while (bags.length < n) bags.push({ entries: [] });
+  while (bags.length > n) bags.pop();
   cleanBagEntries();
   document.getElementById('bagWorkspace').style.display = '';
   renderBagWorkspace();
@@ -331,9 +546,12 @@ window.onSetBags = function() {
 function refreshBagUI() {
   const hasList = laundryItems.length > 0;
   document.getElementById('bagEmpty').style.display = hasList ? 'none' : '';
-  document.getElementById('bagSetup').style.display = hasList ? ''     : 'none';
+  document.getElementById('bagSetup').style.display = hasList ? '' : 'none';
   cleanBagEntries();
-  if (bags.length > 0) renderBagWorkspace();
+  if (bags.length > 0) {
+    document.getElementById('bagWorkspace').style.display = '';
+    renderBagWorkspace();
+  }
 }
 
 function cleanBagEntries() {
@@ -342,7 +560,6 @@ function cleanBagEntries() {
   });
 }
 
-// How many units of a key are assigned across ALL bags
 function totalAssigned(key) {
   return bags.reduce((s, bag) => {
     const e = bag.entries.find(e => e.key === key);
@@ -350,7 +567,6 @@ function totalAssigned(key) {
   }, 0);
 }
 
-// Is this item fully assigned? (all units placed in bags)
 function isFullyAssigned(key) {
   const it = laundryItems.find(i => i.key === key);
   if (!it) return true;
@@ -362,15 +578,10 @@ function renderBagWorkspace() {
   renderBagColumns();
 }
 
-// ── Pool (left column) ──
 function renderPool() {
   const pool = document.getElementById('poolList');
   pool.innerHTML = '';
-
-  if (laundryItems.length === 0) {
-    pool.innerHTML = '<div class="pool-empty">No items yet.</div>';
-    return;
-  }
+  if (laundryItems.length === 0) { pool.innerHTML = '<div class="pool-empty">No items yet.</div>'; return; }
 
   laundryItems.forEach(it => {
     const assigned  = totalAssigned(it.key);
@@ -380,27 +591,21 @@ function renderPool() {
     const row = document.createElement('div');
     row.className = 'pool-item' + (full ? ' assigned' : '');
 
-    const nameEl = document.createElement('span');
-    nameEl.className = 'pool-item-name';
-    nameEl.textContent = it.displayName;
+    const nm = document.createElement('span');
+    nm.className = 'pool-item-name';
+    nm.textContent = it.displayName;
 
-    const wtEl = document.createElement('span');
-    wtEl.className = 'pool-item-wt';
-    if (it.mode === 'quantity' && it.quantity > 1) {
-      wtEl.textContent = full
-        ? '✓ all assigned'
-        : `${remaining} remaining`;
-    } else {
-      wtEl.textContent = full ? '✓' : `${it.totalWeight.toFixed(3)} kg`;
-    }
+    const wt = document.createElement('span');
+    wt.className = 'pool-item-wt';
+    wt.textContent = it.mode === 'quantity' && it.quantity > 1
+      ? (full ? '✓ all assigned' : `${remaining} left`)
+      : (full ? '✓' : `${it.totalWeight.toFixed(3)} kg`);
 
-    row.appendChild(nameEl);
-    row.appendChild(wtEl);
+    row.appendChild(nm); row.appendChild(wt);
     pool.appendChild(row);
   });
 }
 
-// ── Bag Columns (right) ──
 function renderBagColumns() {
   const container = document.getElementById('bagsColumns');
   container.innerHTML = '';
@@ -418,16 +623,12 @@ function buildBagColumn(bag, idx) {
   hdr.innerHTML = `<h3>Bag ${idx + 1}</h3><span class="bag-col-weight">${bagW.toFixed(3)} kg</span>`;
   col.appendChild(hdr);
 
-  // Adder — only show unfully-assigned items not already in THIS bag
+  // Adder
   const adder = document.createElement('div');
   adder.className = 'bag-col-adder';
 
-  const itemsInThisBag = new Set(bag.entries.map(e => e.key));
-  const available = laundryItems.filter(it => {
-    if (itemsInThisBag.has(it.key)) return false; // already in this bag
-    if (isFullyAssigned(it.key)) return false;     // all units used up
-    return true;
-  });
+  const inThisBag  = new Set(bag.entries.map(e => e.key));
+  const available  = laundryItems.filter(it => !inThisBag.has(it.key) && !isFullyAssigned(it.key));
 
   if (available.length > 0) {
     const sel = document.createElement('select');
@@ -435,16 +636,15 @@ function buildBagColumn(bag, idx) {
     available.forEach(it => {
       const opt = document.createElement('option');
       opt.value = it.key;
-      const remaining = it.quantity - totalAssigned(it.key);
-      const suffix = it.mode === 'quantity' && it.quantity > 1
-        ? ` (${remaining} left)`
-        : ` — ${it.totalWeight.toFixed(3)}kg`;
-      opt.textContent = it.displayName + suffix;
+      const rem = it.quantity - totalAssigned(it.key);
+      opt.textContent = it.mode === 'quantity' && it.quantity > 1
+        ? `${it.displayName} (${rem} left)`
+        : `${it.displayName} — ${it.totalWeight.toFixed(3)}kg`;
       sel.appendChild(opt);
     });
     adder.appendChild(sel);
 
-    // Qty row for quantity items
+    // Qty row
     const qtyRow = document.createElement('div');
     qtyRow.className = 'bag-adder-qty';
     qtyRow.style.display = 'none';
@@ -467,9 +667,9 @@ function buildBagColumn(bag, idx) {
       addBtn.disabled = false;
       const it = available.find(i => i.key === key);
       if (it && it.mode === 'quantity' && it.quantity > 1) {
-        const remaining = it.quantity - totalAssigned(it.key);
+        const rem = it.quantity - totalAssigned(it.key);
         qtySel.innerHTML = '';
-        for (let q = 1; q <= remaining; q++) {
+        for (let q = 1; q <= rem; q++) {
           const o = document.createElement('option');
           o.value = q; o.textContent = q; qtySel.appendChild(o);
         }
@@ -484,45 +684,36 @@ function buildBagColumn(bag, idx) {
       if (!key) return;
       const it = laundryItems.find(i => i.key === key);
       if (!it) return;
-      const qty = (it.mode === 'quantity' && it.quantity > 1)
-        ? (parseInt(qtySel.value) || 1) : 1;
+      const qty = (it.mode === 'quantity' && it.quantity > 1) ? (parseInt(qtySel.value) || 1) : 1;
       bag.entries.push({ key, qty });
       renderBagWorkspace();
       renderSummary();
       broadcastToJotform();
     });
   } else {
-    adder.innerHTML = '<div style="font-size:11px;color:var(--muted);font-style:italic;">All items assigned.</div>';
+    adder.innerHTML = '<div style="font-size:11px;color:var(--muted);font-style:italic;padding:4px 0;">All items assigned.</div>';
   }
   col.appendChild(adder);
 
-  // Entries list
-  const entries = document.createElement('div');
-  entries.className = 'bag-col-entries';
-
+  // Entries
+  const entriesEl = document.createElement('div');
+  entriesEl.className = 'bag-col-entries';
   if (bag.entries.length === 0) {
-    const em = document.createElement('div');
-    em.className = 'bag-no-entries';
-    em.textContent = 'Empty';
-    entries.appendChild(em);
+    entriesEl.innerHTML = '<div class="bag-no-entries">Empty</div>';
   } else {
     bag.entries.forEach((entry, eIdx) => {
       const it = laundryItems.find(i => i.key === entry.key);
       if (!it) return;
-      const entryW = it.mode === 'quantity' ? it.weightPerItem * entry.qty : it.totalWeight;
-      const qStr   = it.mode === 'quantity' && entry.qty > 1 ? ` ×${entry.qty}` : '';
-
-      const row = document.createElement('div');
+      const ew   = it.mode === 'quantity' ? it.weightPerItem * entry.qty : it.totalWeight;
+      const qStr = it.mode === 'quantity' && entry.qty > 1 ? ` ×${entry.qty}` : '';
+      const row  = document.createElement('div');
       row.className = 'bag-entry-row';
-
       const nm = document.createElement('span');
       nm.className = 'bag-entry-name';
       nm.textContent = it.displayName + qStr;
-
       const wt = document.createElement('span');
       wt.className = 'bag-entry-wt';
-      wt.textContent = entryW.toFixed(3) + ' kg';
-
+      wt.textContent = ew.toFixed(3) + ' kg';
       const rm = document.createElement('button');
       rm.className = 'bag-entry-rm';
       rm.textContent = '✕';
@@ -532,14 +723,12 @@ function buildBagColumn(bag, idx) {
         renderSummary();
         broadcastToJotform();
       });
-
       row.appendChild(nm); row.appendChild(wt); row.appendChild(rm);
-      entries.appendChild(row);
+      entriesEl.appendChild(row);
     });
   }
-  col.appendChild(entries);
+  col.appendChild(entriesEl);
 
-  // Footer total
   if (bagW > 0) {
     const ft = document.createElement('div');
     ft.className = 'bag-col-footer';
@@ -557,7 +746,9 @@ function getBagWeight(idx) {
   }, 0);
 }
 
-// ── Summary ──
+// ─────────────────────────────────────────────
+//  Summary
+// ─────────────────────────────────────────────
 function buildSummaryText() {
   if (laundryItems.length === 0) return '— No items —';
   const totalW = laundryItems.reduce((s, i) => s + i.totalWeight, 0);
@@ -606,7 +797,9 @@ function renderSummary() {
   if (gt) gt.textContent = totalW.toFixed(3) + ' kg';
 }
 
-// ── JotForm ──
+// ─────────────────────────────────────────────
+//  JotForm
+// ─────────────────────────────────────────────
 function setupJotform() {
   if (typeof JFCustomWidget === 'undefined') return;
   JFCustomWidget.subscribe('submit', () =>
@@ -633,7 +826,25 @@ function broadcastToJotform() {
   } catch(e) {}
 }
 
-// ── Future: Transaction Loader ──
+// ─────────────────────────────────────────────
+//  Manual Refresh
+// ─────────────────────────────────────────────
+window.reloadInventory = async function() {
+  showLoadingState(true);
+  const oldCat = document.getElementById('catSelect').value;
+  document.getElementById('catSelect').innerHTML = '<option value="">— Select —</option>';
+  await loadInventory();
+  buildCategoryDropdown();
+  showLoadingState(false);
+  // Restore category if still valid
+  if (oldCat && INVENTORY[oldCat]) {
+    document.getElementById('catSelect').value = oldCat;
+  }
+};
+
+// ─────────────────────────────────────────────
+//  Future: Transaction Loader
+// ─────────────────────────────────────────────
 window.loadTransaction = txn => console.log('[loadTransaction] Not yet implemented:', txn);
 
 window.addItemProgrammatically = function(category, itemName, component, weightPerItem, quantity = 1) {
@@ -649,7 +860,9 @@ window.addItemProgrammatically = function(category, itemName, component, weightP
   return true;
 };
 
-// ── Utilities ──
+// ─────────────────────────────────────────────
+//  Utilities
+// ─────────────────────────────────────────────
 function makeKey(cat, name) { return `${cat}::${name}`; }
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
