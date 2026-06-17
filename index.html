@@ -15,6 +15,11 @@
   <div class="app-header">
     <h1>🧺 Noelle West Laundry Calculator</h1>
     <p>Select items from inventory — no manual typing needed</p>
+    <div id="loadingBanner" style="display:none; margin-top:8px; font-size:12px; color:var(--brand); font-weight:600;">
+      ⏳ Loading inventory from Google Sheets…
+    </div>
+    <div id="sourceBadge" style="margin-top:4px; font-size:11px; font-weight:600;"></div>
+    <button class="btn btn-primary" onclick="reloadInventory()" style="margin-top:8px;font-size:12px;padding:6px 14px;">🔄 Refresh Inventory</button>
   </div>
 
   <!-- ── Item Selector ── -->
