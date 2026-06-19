@@ -175,14 +175,19 @@ async function loadFromGoogleSheets() {
 }
 
 function findKgColIdx(header) {
-  return header.findIndex(h => /KILO/.test(h) && !h.includes('(KGS)'));
+  // Match any column containing KILO but NOT ending in (KGS) — those are component columns
+  return header.findIndex(h => {
+    const u = h.toUpperCase().trim();
+    return u.includes('KILO') && !u.endsWith('(KGS)');
+  });
 }
 
 function findKgsColIdxs(header) {
   const result = [];
   header.forEach((h, idx) => {
-    if (h.includes('(KGS)')) {
-      const label = h.replace('(KGS)', '').trim();
+    const u = h.toUpperCase().trim();
+    if (u.endsWith('(KGS)')) {
+      const label = u.replace('(KGS)', '').trim();
       result.push({ label, idx });
     }
   });
