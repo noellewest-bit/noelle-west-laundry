@@ -38,9 +38,7 @@ let INVENTORY    = {};
 let laundryItems = [];
 let usedKeys     = new Set();
 let tomItem      = null;
-let bags         = [];
 window.latestSubmissionText = '';
-
 // ─────────────────────────────────────────────
 //  Boot
 // ─────────────────────────────────────────────
@@ -478,7 +476,6 @@ function onAddItem() {
 function removeItem(key) {
   laundryItems = laundryItems.filter(i => i.key !== key);
   usedKeys.delete(key);
-  bags.forEach(bag => { bag.entries = bag.entries.filter(e => e.key !== key); });
   renderAll();
 }
 
@@ -488,7 +485,6 @@ function removeItem(key) {
 function renderAll() {
   renderList();
   renderTotals();
-  refreshBagUI();
   renderSummary();
   broadcastToJotform();
 }
@@ -528,224 +524,6 @@ function renderTotals() {
   document.getElementById('totalWeight').textContent = totalW.toFixed(3) + ' kg';
 }
 
-// ═════════════════════════════════════════════
-//  BAG GROUPING — Pool + Side-by-side columns
-// ═════════════════════════════════════════════
-
-window.onSetBags = function() {
-  const n = Math.max(1, Math.min(20, parseInt(document.getElementById('numBagsInput').value) || 1));
-  while (bags.length < n) bags.push({ entries: [] });
-  while (bags.length > n) bags.pop();
-  cleanBagEntries();
-  document.getElementById('bagWorkspace').style.display = '';
-  renderBagWorkspace();
-  renderSummary();
-  broadcastToJotform();
-};
-
-function refreshBagUI() {
-  const hasList = laundryItems.length > 0;
-  document.getElementById('bagEmpty').style.display = hasList ? 'none' : '';
-  document.getElementById('bagSetup').style.display = hasList ? '' : 'none';
-  cleanBagEntries();
-  if (bags.length > 0) {
-    document.getElementById('bagWorkspace').style.display = '';
-    renderBagWorkspace();
-  }
-}
-
-function cleanBagEntries() {
-  bags.forEach(bag => {
-    bag.entries = bag.entries.filter(e => laundryItems.some(i => i.key === e.key));
-  });
-}
-
-function totalAssigned(key) {
-  return bags.reduce((s, bag) => {
-    const e = bag.entries.find(e => e.key === key);
-    return s + (e ? e.qty : 0);
-  }, 0);
-}
-
-function isFullyAssigned(key) {
-  const it = laundryItems.find(i => i.key === key);
-  if (!it) return true;
-  return totalAssigned(key) >= it.quantity;
-}
-
-function renderBagWorkspace() {
-  renderPool();
-  renderBagColumns();
-}
-
-function renderPool() {
-  const pool = document.getElementById('poolList');
-  pool.innerHTML = '';
-  if (laundryItems.length === 0) { pool.innerHTML = '<div class="pool-empty">No items yet.</div>'; return; }
-
-  laundryItems.forEach(it => {
-    const assigned  = totalAssigned(it.key);
-    const remaining = it.quantity - assigned;
-    const full      = remaining <= 0;
-
-    const row = document.createElement('div');
-    row.className = 'pool-item' + (full ? ' assigned' : '');
-
-    const nm = document.createElement('span');
-    nm.className = 'pool-item-name';
-    nm.textContent = it.displayName;
-
-    const wt = document.createElement('span');
-    wt.className = 'pool-item-wt';
-    wt.textContent = it.mode === 'quantity' && it.quantity > 1
-      ? (full ? '✓ all assigned' : `${remaining} left`)
-      : (full ? '✓' : `${it.totalWeight.toFixed(3)} kg`);
-
-    row.appendChild(nm); row.appendChild(wt);
-    pool.appendChild(row);
-  });
-}
-
-function renderBagColumns() {
-  const container = document.getElementById('bagsColumns');
-  container.innerHTML = '';
-  bags.forEach((bag, idx) => container.appendChild(buildBagColumn(bag, idx)));
-}
-
-function buildBagColumn(bag, idx) {
-  const bagW = getBagWeight(idx);
-  const col  = document.createElement('div');
-  col.className = 'bag-col';
-
-  // Header
-  const hdr = document.createElement('div');
-  hdr.className = 'bag-col-header';
-  hdr.innerHTML = `<h3>Bag ${idx + 1}</h3><span class="bag-col-weight">${bagW.toFixed(3)} kg</span>`;
-  col.appendChild(hdr);
-
-  // Adder
-  const adder = document.createElement('div');
-  adder.className = 'bag-col-adder';
-
-  const inThisBag  = new Set(bag.entries.map(e => e.key));
-  const available  = laundryItems.filter(it => !inThisBag.has(it.key) && !isFullyAssigned(it.key));
-
-  if (available.length > 0) {
-    const sel = document.createElement('select');
-    sel.innerHTML = '<option value="">— Select item —</option>';
-    available.forEach(it => {
-      const opt = document.createElement('option');
-      opt.value = it.key;
-      const rem = it.quantity - totalAssigned(it.key);
-      opt.textContent = it.mode === 'quantity' && it.quantity > 1
-        ? `${it.displayName} (${rem} left)`
-        : `${it.displayName} — ${it.totalWeight.toFixed(3)}kg`;
-      sel.appendChild(opt);
-    });
-    adder.appendChild(sel);
-
-    // Qty row
-    const qtyRow = document.createElement('div');
-    qtyRow.className = 'bag-adder-qty';
-    qtyRow.style.display = 'none';
-    const qtyLbl = document.createElement('span');
-    qtyLbl.textContent = 'Qty:';
-    const qtySel = document.createElement('select');
-    qtyRow.appendChild(qtyLbl);
-    qtyRow.appendChild(qtySel);
-    adder.appendChild(qtyRow);
-
-    const addBtn = document.createElement('button');
-    addBtn.className = 'btn btn-primary';
-    addBtn.textContent = '+ Add to Bag';
-    addBtn.disabled = true;
-    adder.appendChild(addBtn);
-
-    sel.addEventListener('change', () => {
-      const key = sel.value;
-      if (!key) { addBtn.disabled = true; qtyRow.style.display = 'none'; return; }
-      addBtn.disabled = false;
-      const it = available.find(i => i.key === key);
-      if (it && it.mode === 'quantity' && it.quantity > 1) {
-        const rem = it.quantity - totalAssigned(it.key);
-        qtySel.innerHTML = '';
-        for (let q = 1; q <= rem; q++) {
-          const o = document.createElement('option');
-          o.value = q; o.textContent = q; qtySel.appendChild(o);
-        }
-        qtyRow.style.display = '';
-      } else {
-        qtyRow.style.display = 'none';
-      }
-    });
-
-    addBtn.addEventListener('click', () => {
-      const key = sel.value;
-      if (!key) return;
-      const it = laundryItems.find(i => i.key === key);
-      if (!it) return;
-      const qty = (it.mode === 'quantity' && it.quantity > 1) ? (parseInt(qtySel.value) || 1) : 1;
-      bag.entries.push({ key, qty });
-      renderBagWorkspace();
-      renderSummary();
-      broadcastToJotform();
-    });
-  } else {
-    adder.innerHTML = '<div style="font-size:11px;color:var(--muted);font-style:italic;padding:4px 0;">All items assigned.</div>';
-  }
-  col.appendChild(adder);
-
-  // Entries
-  const entriesEl = document.createElement('div');
-  entriesEl.className = 'bag-col-entries';
-  if (bag.entries.length === 0) {
-    entriesEl.innerHTML = '<div class="bag-no-entries">Empty</div>';
-  } else {
-    bag.entries.forEach((entry, eIdx) => {
-      const it = laundryItems.find(i => i.key === entry.key);
-      if (!it) return;
-      const ew   = it.mode === 'quantity' ? it.weightPerItem * entry.qty : it.totalWeight;
-      const qStr = it.mode === 'quantity' && entry.qty > 1 ? ` ×${entry.qty}` : '';
-      const row  = document.createElement('div');
-      row.className = 'bag-entry-row';
-      const nm = document.createElement('span');
-      nm.className = 'bag-entry-name';
-      nm.textContent = it.displayName + qStr;
-      const wt = document.createElement('span');
-      wt.className = 'bag-entry-wt';
-      wt.textContent = ew.toFixed(3) + ' kg';
-      const rm = document.createElement('button');
-      rm.className = 'bag-entry-rm';
-      rm.textContent = '✕';
-      rm.addEventListener('click', () => {
-        bag.entries.splice(eIdx, 1);
-        renderBagWorkspace();
-        renderSummary();
-        broadcastToJotform();
-      });
-      row.appendChild(nm); row.appendChild(wt); row.appendChild(rm);
-      entriesEl.appendChild(row);
-    });
-  }
-  col.appendChild(entriesEl);
-
-  if (bagW > 0) {
-    const ft = document.createElement('div');
-    ft.className = 'bag-col-footer';
-    ft.innerHTML = `Total: <strong>${bagW.toFixed(3)} kg</strong>`;
-    col.appendChild(ft);
-  }
-
-  return col;
-}
-
-function getBagWeight(idx) {
-  return bags[idx].entries.reduce((s, e) => {
-    const it = laundryItems.find(i => i.key === e.key);
-    return s + (it ? (it.mode === 'quantity' ? it.weightPerItem * e.qty : it.totalWeight) : 0);
-  }, 0);
-}
-
 // ─────────────────────────────────────────────
 //  Summary
 // ─────────────────────────────────────────────
@@ -753,37 +531,15 @@ function buildSummaryText() {
   if (laundryItems.length === 0) return '— No items —';
   const totalW = laundryItems.reduce((s, i) => s + i.totalWeight, 0);
   let lines = [];
-
-  if (bags.length > 0 && bags.some(b => b.entries.length > 0)) {
-    bags.forEach((bag, idx) => {
-      if (bag.entries.length === 0) return;
-      lines.push(`--- BAG ${idx + 1} (${getBagWeight(idx).toFixed(3)}kg) ---`);
-      bag.entries.forEach(e => {
-        const it = laundryItems.find(i => i.key === e.key);
-        if (!it) return;
-        const ew = it.mode === 'quantity' ? it.weightPerItem * e.qty : it.totalWeight;
-        const qs = it.mode === 'quantity' && e.qty > 1 ? ` ×${e.qty}` : '';
-        lines.push(`ITEM NAME: ${it.displayName}${qs}`);
-        if (it.mode === 'quantity' && e.qty > 1) {
-          lines.push(`QUANTITY: ${e.qty}`);
-          lines.push(`WEIGHT PER ITEM: ${it.weightPerItem.toFixed(3)}kg`);
-        }
-        lines.push(`WEIGHT: ${ew.toFixed(3)}kg`);
-        lines.push('');
-      });
-    });
-  } else {
-    laundryItems.forEach(it => {
-      lines.push(`ITEM NAME: ${it.displayName}`);
-      if (it.mode === 'quantity' && it.quantity > 1) {
-        lines.push(`QUANTITY: ${it.quantity}`);
-        lines.push(`WEIGHT PER ITEM: ${it.weightPerItem.toFixed(3)}kg`);
-      }
-      lines.push(`WEIGHT: ${it.totalWeight.toFixed(3)}kg`);
-      lines.push('');
-    });
-  }
-
+  laundryItems.forEach(it => {
+    lines.push(`ITEM NAME: ${it.displayName}`);
+    if (it.mode === 'quantity' && it.quantity > 1) {
+      lines.push(`QUANTITY: ${it.quantity}`);
+      lines.push(`WEIGHT PER ITEM: ${it.weightPerItem.toFixed(3)}kg`);
+    }
+    lines.push(`WEIGHT: ${it.totalWeight.toFixed(3)}kg`);
+    lines.push('');
+  });
   lines.push(`TOTAL ITEMS: ${laundryItems.length}`);
   lines.push(`TOTAL WEIGHT: ${totalW.toFixed(3)}kg`);
   return lines.join('\n');
