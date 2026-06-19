@@ -100,39 +100,6 @@
     </div>
   </div>
 
-  <!-- ── Bag Grouping ── -->
-  <div class="card">
-    <div class="card-title">🛄 Bag Grouping</div>
-
-    <div id="bagEmpty" class="empty-state" style="padding:12px 0 4px;">
-      <p style="font-size:12px;">Add items to the laundry list first.</p>
-    </div>
-
-    <div id="bagSetup" style="display:none;">
-      <div class="bag-section-header">
-        <div class="bag-count-row">
-          <label for="numBagsInput" style="font-size:13px;color:var(--text);font-weight:600;">Number of bags:</label>
-          <input type="number" id="numBagsInput" min="1" max="20" value="1" />
-          <button class="btn btn-primary" onclick="onSetBags()" style="padding:7px 14px;font-size:13px;">Set Bags</button>
-        </div>
-      </div>
-
-      <!-- Pool + Bag columns -->
-      <div class="bag-workspace" id="bagWorkspace" style="display:none;">
-
-        <!-- Left: Unassigned pool -->
-        <div class="bag-pool">
-          <div class="bag-pool-header">📦 Unassigned Items</div>
-          <div class="bag-pool-list" id="poolList"></div>
-        </div>
-
-        <!-- Right: Bag columns -->
-        <div class="bags-columns" id="bagsColumns"></div>
-
-      </div>
-    </div>
-  </div>
-
   <!-- ── Grand Total ── -->
   <div class="card grand-total-card">
     <div class="grand-total-label">🏋️ Grand Total Weight</div>
