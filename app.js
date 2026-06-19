@@ -307,14 +307,19 @@ function onItemChange(cat, itemName) {
   const item    = catData.items.find(i => i.name === itemName);
   if (!item) return;
   const mode = getCatMode(cat);
+
   if (catData.type === 'components') {
     showComponentDropdown(catData.components, item);
-  } else if (catData.type === 'auto') {
-    if (item.weight !== null && item.weight !== undefined) setWeightDisplay(item.weight, mode);
-    else showManualWeightInput(mode);
+  } else if (item.weight !== null && item.weight !== undefined) {
+    // Weight exists on the item — always show it regardless of catData.type
+    setWeightDisplay(item.weight, mode);
+  } else if (WEIGHT_ONLY_CATS.has(cat)) {
+    // Category should have weight but this item has none in the sheet
+    showManualWeightInput(mode);
   } else {
     showManualWeightInput(mode);
   }
+
   updateTotalWeightDisplay();
   updateAddButton();
 }
@@ -350,7 +355,7 @@ function onComponentChange() {
   if (!comp || !name || !INVENTORY[cat]) { updateAddButton(); return; }
   const item = INVENTORY[cat].items.find(i => i.name === name);
   if (!item) return;
-  const w = item.components[comp];
+  const w = item.components ? item.components[comp] : null;
   if (w != null) setWeightDisplay(w, getCatMode(cat));
   else           showManualWeightInput(getCatMode(cat));
   updateTotalWeightDisplay();
