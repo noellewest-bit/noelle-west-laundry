@@ -18,11 +18,12 @@ const SHEET_NAMES = [
 
 // Category modes
 const WEIGHT_ONLY_CATS = new Set([
-  'BGI','BGS','PGI','PGS','PGC','FIL','MG','CD','MS','CS','PET-#'
+  'BGI','BGS','PGI','PGS','PGC','FIL','MG','CD','MS','CS','PET-#',
+  'BOY','BPO','BPOL','COAT BARONG','BCC','BPOC','VST','POLO'
 ]);
 const QUANTITY_CATS = new Set([
-  'BCPO','BOY','BPSC','BPO','BPOL','BPS','COAT BARONG','BCC','BPOC',
-  'VST','S-UPPER','POLO','ACC','PEN','PANTS','PET','MOH','BMG','FGG'
+  'BCPO','BPSC','BPS','ACC','PEN','PANTS',
+  'S-UPPER','PET','MOH','BMG','FGG'
 ]);
 
 function getCatMode(cat) {
