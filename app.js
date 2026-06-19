@@ -594,6 +594,17 @@ function broadcastToJotform() {
 }
 
 // ─────────────────────────────────────────────
+//  Debug — call window.debugCat('POLO') in console
+// ─────────────────────────────────────────────
+window.debugCat = function(cat) {
+  const d = INVENTORY[cat];
+  if (!d) { console.log('Category not found:', cat); return; }
+  console.log('Category:', cat);
+  console.log('Type:', d.type);
+  console.log('First 3 items:', JSON.stringify(d.items.slice(0, 3), null, 2));
+};
+
+// ─────────────────────────────────────────────
 //  Manual Refresh
 // ─────────────────────────────────────────────
 window.reloadInventory = async function() {
