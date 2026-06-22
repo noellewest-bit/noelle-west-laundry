@@ -18,17 +18,21 @@ const SHEET_NAMES = [
 
 // Category modes
 const WEIGHT_ONLY_CATS = new Set([
-  'BGI','BGS','PGI','PGS','PGC','FIL','MG','CD','MS','CS','PET-#',
-  'BOY','BPO','BPOL','COAT BARONG','BCC','BPOC','VST','POLO'
+  'BGI','BGS','PGI','PGS','PGC','FIL','MG','CD','MS','CS','PET-#'
 ]);
 const QUANTITY_CATS = new Set([
   'BCPO','BPSC','BPS','ACC','PEN','PANTS',
   'S-UPPER','PET','MOH','BMG','FGG'
 ]);
+// Has KILOGRAM(S) weight column AND needs quantity selection
+const WEIGHT_AND_QTY_CATS = new Set([
+  'BOY','BPO','BPOL','COAT BARONG','BCC','BPOC','VST','POLO'
+]);
 
 function getCatMode(cat) {
-  if (WEIGHT_ONLY_CATS.has(cat)) return 'weight-only';
-  if (QUANTITY_CATS.has(cat))    return 'quantity';
+  if (WEIGHT_ONLY_CATS.has(cat))     return 'weight-only';
+  if (QUANTITY_CATS.has(cat))        return 'quantity';
+  if (WEIGHT_AND_QTY_CATS.has(cat)) return 'weight-and-qty';
   return 'weight-only';
 }
 
@@ -270,7 +274,7 @@ function onCategoryChange() {
   if (!cat || !INVENTORY[cat]) return;
   const available = INVENTORY[cat].items.filter(it => !usedKeys.has(makeKey(cat, it.name)));
   buildItemDropdown(cat, available);
-  if (getCatMode(cat) === 'quantity') showQtyRow();
+  if (getCatMode(cat) === 'quantity' || getCatMode(cat) === 'weight-and-qty') showQtyRow();
 }
 
 // ─────────────────────────────────────────────
@@ -368,7 +372,8 @@ function onComponentChange() {
 function setWeightDisplay(val, mode) {
   const disp = document.getElementById('weightDisplay');
   const inp  = document.getElementById('weightInput');
-  document.getElementById('weightLabel').textContent = mode === 'quantity' ? 'Weight Per Item' : 'Weight';
+  const isQty = mode === 'quantity' || mode === 'weight-and-qty';
+  document.getElementById('weightLabel').textContent = isQty ? 'Weight Per Item' : 'Weight';
   disp.classList.remove('empty');
   disp.style.display = '';
   disp.innerHTML = `<span class="weight-val">${parseFloat(val).toFixed(3)}</span><span class="weight-unit">kg</span>`;
@@ -379,10 +384,11 @@ function setWeightDisplay(val, mode) {
 function showManualWeightInput(mode) {
   const disp = document.getElementById('weightDisplay');
   const inp  = document.getElementById('weightInput');
-  document.getElementById('weightLabel').textContent = mode === 'quantity' ? 'Weight Per Item' : 'Weight';
+  const isQty = mode === 'quantity' || mode === 'weight-and-qty';
+  document.getElementById('weightLabel').textContent = isQty ? 'Weight Per Item' : 'Weight';
   disp.style.display = 'none'; delete disp.dataset.weight;
   inp.style.display = '';
-  inp.placeholder = mode === 'quantity' ? 'Weight per item (kg)' : 'Enter kg';
+  inp.placeholder = isQty ? 'Weight per item (kg)' : 'Enter kg';
   inp.value = ''; inp.focus();
 }
 
@@ -422,7 +428,8 @@ function onWeightInput() { updateTotalWeightDisplay(); updateAddButton(); }
 
 function updateTotalWeightDisplay() {
   const cat = document.getElementById('catSelect').value;
-  if (!cat || getCatMode(cat) !== 'quantity') return;
+  const mode = getCatMode(cat);
+  if (!cat || (mode !== 'quantity' && mode !== 'weight-and-qty')) return;
   const wpi = getCurrentWeightPerItem();
   const qty = parseInt(document.getElementById('qtySelect').value) || 1;
   const tw  = document.getElementById('totalWeightDisplay');
@@ -467,7 +474,7 @@ function onAddItem() {
   if (!weightPerItem || weightPerItem <= 0) { showAlert('Please enter a valid weight.', 'warn'); return; }
 
   const isManual    = document.getElementById('weightInput').style.display !== 'none';
-  const qty         = mode === 'quantity' ? (parseInt(document.getElementById('qtySelect').value) || 1) : 1;
+  const qty         = (mode === 'quantity' || mode === 'weight-and-qty') ? (parseInt(document.getElementById('qtySelect').value) || 1) : 1;
   const totalWeight = parseFloat((weightPerItem * qty).toFixed(6));
   const key         = makeKey(cat, displayName);
 
