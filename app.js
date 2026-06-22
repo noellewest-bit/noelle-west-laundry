@@ -548,16 +548,20 @@ function renderTotals() {
 function buildSummaryText() {
   if (laundryItems.length === 0) return '— No items —';
   const totalW = laundryItems.reduce((s, i) => s + i.totalWeight, 0);
-  let lines = [];
+
+  // Group by category, preserving insertion order
+  const catMap = {};
   laundryItems.forEach(it => {
-    lines.push(`ITEM NAME: ${it.displayName}`);
-    if (it.mode === 'quantity' && it.quantity > 1) {
-      lines.push(`QUANTITY: ${it.quantity}`);
-      lines.push(`WEIGHT PER ITEM: ${it.weightPerItem.toFixed(3)}kg`);
-    }
-    lines.push(`WEIGHT: ${it.totalWeight.toFixed(3)}kg`);
-    lines.push('');
+    if (!catMap[it.category]) catMap[it.category] = [];
+    const qStr = it.mode === 'quantity' && it.quantity > 1 ? ` ×${it.quantity}` : '';
+    catMap[it.category].push(`${it.displayName}${qStr} (${it.totalWeight.toFixed(3)}kg)`);
   });
+
+  const lines = [];
+  Object.entries(catMap).forEach(([cat, items]) => {
+    lines.push(`${cat}: ${items.join(', ')}`);
+  });
+  lines.push('');
   lines.push(`TOTAL ITEMS: ${laundryItems.length}`);
   lines.push(`TOTAL WEIGHT: ${totalW.toFixed(3)}kg`);
   return lines.join('\n');
